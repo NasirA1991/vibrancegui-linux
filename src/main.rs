@@ -23,8 +23,8 @@ fn main() -> eframe::Result {
         .expect("valid app icon");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([540.0, 720.0])
-            .with_min_inner_size([460.0, 600.0])
+            .with_inner_size([460.0, 660.0])
+            .with_min_inner_size([420.0, 560.0])
             .with_title("VibranceGUI for Linux")
             .with_app_id("vibrancegui")
             .with_icon(icon),

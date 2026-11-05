@@ -938,7 +938,7 @@ impl VibranceGuiApp {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = Vec2::new(8.0, 10.0);
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 8.0);
                     for idx in indices {
                         let game = self.games[idx].clone();
                         self.draw_game_tile(ui, &ctx, &game);
@@ -952,7 +952,7 @@ impl VibranceGuiApp {
         let selected = self.selected == Some(game.appid);
         let running = self.running_for(game.appid).is_some();
         let enabled = game.vk_enabled();
-        let tile_size = Vec2::new(92.0, 112.0);
+        let tile_size = Vec2::new(78.0, 96.0);
         let (rect, response) = ui.allocate_exact_size(tile_size, Sense::click());
         if response.clicked() {
             self.set_selected(game.appid);
@@ -976,7 +976,7 @@ impl VibranceGuiApp {
             );
         }
 
-        let image_rect = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), 70.0));
+        let image_rect = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), 60.0));
         if let Some(texture) = self.texture_for(ctx, game) {
             painter.image(
                 texture.id(),
@@ -987,8 +987,8 @@ impl VibranceGuiApp {
             // Darken the bottom slightly so the title remains readable.
             painter.rect_filled(
                 egui::Rect::from_min_size(
-                    egui::pos2(rect.left(), rect.top() + 52.0),
-                    Vec2::new(rect.width(), 18.0),
+                    egui::pos2(rect.left(), rect.top() + 44.0),
+                    Vec2::new(rect.width(), 16.0),
                 ),
                 CornerRadius::ZERO,
                 Color32::from_black_alpha(70),
@@ -1001,17 +1001,17 @@ impl VibranceGuiApp {
                 image_rect.center(),
                 Align2::CENTER_CENTER,
                 initials,
-                FontId::proportional(22.0),
+                FontId::proportional(19.0),
                 Color32::from_white_alpha(210),
             );
         }
 
-        let title = elide(&game.name, 16);
+        let title = elide(&game.name, 13);
         painter.text(
-            egui::pos2(rect.left() + 5.0, rect.top() + 74.0),
+            egui::pos2(rect.left() + 4.0, rect.top() + 63.0),
             Align2::LEFT_TOP,
             title,
-            FontId::proportional(10.0),
+            FontId::proportional(9.0),
             TEXT,
         );
         let sub = if running {
@@ -1039,10 +1039,10 @@ impl VibranceGuiApp {
             MUTED
         };
         painter.text(
-            egui::pos2(rect.left() + 5.0, rect.top() + 90.0),
+            egui::pos2(rect.left() + 4.0, rect.top() + 77.0),
             Align2::LEFT_TOP,
             sub,
-            FontId::proportional(8.0),
+            FontId::proportional(7.5),
             sub_color,
         );
         if enabled || running {
