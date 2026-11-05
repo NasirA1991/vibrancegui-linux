@@ -5,6 +5,7 @@ mod paths;
 mod process;
 mod state;
 mod steam;
+mod theme;
 mod tray;
 mod vdf;
 mod vksumi;
@@ -21,6 +22,13 @@ fn main() -> eframe::Result {
 
     let icon = eframe::icon_data::from_png_bytes(include_bytes!("../packaging/vibrancegui.png"))
         .expect("valid app icon");
+    let palette = if args.iter().any(|arg| arg == "--light") {
+        theme::LIGHT
+    } else if args.iter().any(|arg| arg == "--dark") {
+        theme::DARK
+    } else {
+        theme::detect()
+    };
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([460.0, 660.0])
@@ -35,11 +43,12 @@ fn main() -> eframe::Result {
         "vibrancegui",
         options,
         Box::new(|cc| {
-            configure_theme(&cc.egui_ctx);
+            theme::apply(&cc.egui_ctx, &palette);
             Ok(Box::new(app::VibranceGuiApp::new(
                 cc,
                 use_tray,
                 start_hidden,
+                palette,
             )))
         }),
     )
@@ -91,28 +100,4 @@ fn doctor() -> eframe::Result {
         }
     }
     Ok(())
-}
-
-fn configure_theme(ctx: &egui::Context) {
-    let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = egui::Color32::from_rgb(18, 18, 21);
-    visuals.window_fill = egui::Color32::from_rgb(27, 27, 32);
-    visuals.extreme_bg_color = egui::Color32::from_rgb(12, 12, 15);
-    visuals.faint_bg_color = egui::Color32::from_rgb(34, 34, 40);
-    visuals.selection.bg_fill = egui::Color32::from_rgb(232, 153, 74);
-    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(232, 153, 74);
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(49, 49, 57);
-    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(38, 38, 45);
-    visuals.window_corner_radius = egui::CornerRadius::same(10);
-    ctx.set_visuals(visuals);
-
-    ctx.all_styles_mut(|style| {
-        style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-        style.spacing.button_padding = egui::vec2(10.0, 5.0);
-        style.spacing.slider_width = 250.0;
-        style
-            .text_styles
-            .insert(egui::TextStyle::Heading, egui::FontId::proportional(20.0));
-    });
 }

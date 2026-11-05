@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.1.3 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.1.4 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -19,6 +19,7 @@ VibranceGUI for Linux v0.1.3 is a **vkSumi profile editor with Steam discovery a
   - otherwise vkSumi's per-executable `~/.config/vkSumi/games/<exe>.conf`.
 - Edits the profile live; vkSumi hot-reloads it.
 - A compact **VibranceGUI-style window**: Settings card, default vibrance, Program Settings with icons, Add / Add manually / Remove.
+- **System light/dark theme detection** through the XDG desktop portal, with a Light theme toggle and `--light`/`--dark` overrides.
 - A global default vibrance slider that writes only `vibrance` to the global vkSumi config.
 - **All numeric vkSumi sliders** in the per-game Advanced section: saturation, temperature, contrast, brightness, gamma, exposure, hue, RGB gains, shadows/midtones/highlights, six hue bands, split toning, vignette, and daltonize strength/severity.
 - **Steam artwork icons**, downloaded on demand from Steam's CDN and cached in `~/.cache/vibrancegui/artwork`.
@@ -36,7 +37,6 @@ VibranceGUI for Linux v0.1.3 is a **vkSumi profile editor with Steam discovery a
 - No Enable/Disable button. Removing `ENABLE_VKSUMI=1` from Steam is still the only true off switch.
 - No Heroic, Lutris, Faugus, or Flatpak Steam library import. Non-Steam games can be added manually.
 - No censor-box editor; daltonize mode is still config-file-only. Numeric daltonize sliders are exposed.
-- “Affect primary monitor only” is not applicable: vkSumi grades the game's Vulkan swapchain, so the app shows it disabled rather than pretending to control monitors.
 - HDR/non-sRGB games may show no effect; OpenGL games do not work; anti-cheat may block Vulkan layers.
 
 ## vkSumi dependency
@@ -105,7 +105,9 @@ A prebuilt binary is available on the [GitHub release page](https://github.com/N
 
 ## UI
 
-The UI is **egui/eframe**, not GTK. It is a native Rust window with a custom dark theme; no web view and no GTK dependency. The layout intentionally mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open in a compact window with Basic and Advanced sliders.
+The UI is **egui/eframe**, not GTK. It is a native Rust window with a custom theme; no web view and no GTK dependency. The layout intentionally mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open in a compact window with Basic and Advanced sliders.
+
+The app follows the system light/dark preference at startup through the XDG desktop portal. You can override it with the **Light theme** checkbox in Settings or with `--light` / `--dark`. The toggle is session-only; the next launch follows the system again unless flagged.
 
 If you add a non-Steam game, use **Add manually**, enter the executable path, optionally an icon and a `VKSUMI_CONFIG_FILE` path, then launch the game with `ENABLE_VKSUMI=1`. The app matches the running executable by name and links its config.
 
@@ -144,7 +146,8 @@ vkSumi is a Vulkan layer. It must be present before the game creates its Vulkan 
 
 ## Global default vs per-game profiles
 
-- The **Default Vibrance Level** slider writes `vibrance` to `~/.config/vkSumi/vkSumi.conf`.
+- The **Default Vibrance Level** slider is 0–100% from the left and writes `vibrance` (0.0–1.0) to `~/.config/vkSumi/vkSumi.conf`.
+- Negative vibrance is not exposed in the Basic/UI slider; it remains a config-file value.
 - A per-game slider writes an override to that game's profile.
 - **reset** on a control removes the override, so the game inherits the global value.
 - **Reset overrides** removes all app-managed overrides from that profile.

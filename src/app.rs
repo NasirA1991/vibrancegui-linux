@@ -15,16 +15,9 @@ use crate::paths::{AppPaths, expand_user_path};
 use crate::process::{self, Observation, ObservedGame};
 use crate::state::{GameMapping, SavedState};
 use crate::steam::{SteamData, SteamGame};
+use crate::theme::{self, Palette};
 use crate::tray::{self, TrayAction, VibranceTray};
 use crate::vksumi::VkSumiStatus;
-
-const ACCENT: Color32 = Color32::from_rgb(232, 153, 74);
-const PANEL: Color32 = Color32::from_rgb(27, 27, 32);
-const PANEL_2: Color32 = Color32::from_rgb(34, 34, 40);
-const MUTED: Color32 = Color32::from_rgb(145, 145, 158);
-const TEXT: Color32 = Color32::from_rgb(235, 235, 240);
-const OK: Color32 = Color32::from_rgb(97, 201, 141);
-const WARN: Color32 = Color32::from_rgb(236, 188, 91);
 
 pub struct VibranceGuiApp {
     paths: AppPaths,
@@ -53,6 +46,7 @@ pub struct VibranceGuiApp {
     tray: Option<ksni::blocking::Handle<VibranceTray>>,
     tray_rx: Receiver<TrayAction>,
     quit_requested: bool,
+    palette: Palette,
     textures: HashMap<u32, TextureHandle>,
     texture_attempted: HashSet<u32>,
     artwork_paths: HashMap<u32, PathBuf>,
@@ -111,7 +105,12 @@ struct GameEditor {
 }
 
 impl VibranceGuiApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, use_tray: bool, start_hidden: bool) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        use_tray: bool,
+        start_hidden: bool,
+        palette: Palette,
+    ) -> Self {
         let paths = AppPaths::discover().expect("home directory");
         let _ = paths.ensure();
         let layer = VkSumiStatus::detect(&paths);
@@ -214,6 +213,7 @@ impl VibranceGuiApp {
             tray,
             tray_rx,
             quit_requested: false,
+            palette,
             textures: HashMap::new(),
             texture_attempted: HashSet::new(),
             artwork_paths: HashMap::new(),
@@ -692,13 +692,22 @@ impl VibranceGuiApp {
 
     fn draw_header(&mut self, ui: &mut egui::Ui) {
         Frame::new()
-            .fill(PANEL)
+            .fill(self.palette.panel)
             .inner_margin(Margin::symmetric(16, 10))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("VibranceGUI").size(22.0).strong().color(TEXT));
+                    ui.label(
+                        RichText::new("VibranceGUI")
+                            .size(22.0)
+                            .strong()
+                            .color(self.palette.text),
+                    );
                     ui.add_space(8.0);
-                    ui.label(RichText::new("for Linux").size(12.0).color(MUTED));
+                    ui.label(
+                        RichText::new("for Linux")
+                            .size(12.0)
+                            .color(self.palette.muted),
+                    );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Refresh").clicked() {
                             self.refresh_library();
@@ -706,7 +715,11 @@ impl VibranceGuiApp {
                         self.status_chip(
                             ui,
                             self.layer.status_text(),
-                            if self.layer.usable { OK } else { WARN },
+                            if self.layer.usable {
+                                self.palette.ok
+                            } else {
+                                self.palette.warn
+                            },
                         );
                     });
                 });
@@ -715,7 +728,7 @@ impl VibranceGuiApp {
 
     fn status_chip(&self, ui: &mut egui::Ui, text: &str, color: Color32) {
         Frame::new()
-            .fill(PANEL_2)
+            .fill(self.palette.panel_2)
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::symmetric(9, 4))
             .show(ui, |ui| {
@@ -725,7 +738,7 @@ impl VibranceGuiApp {
 
     fn draw_missing_layer(&mut self, ui: &mut egui::Ui) {
         Frame::new()
-            .fill(Color32::from_rgb(52, 43, 30))
+            .fill(self.palette.panel_2)
             .corner_radius(CornerRadius::same(9))
             .inner_margin(Margin::same(12))
             .show(ui, |ui| {
@@ -733,7 +746,7 @@ impl VibranceGuiApp {
                     ui.label(
                         RichText::new("vkSumi is not installed or could not be found.")
                             .strong()
-                            .color(WARN),
+                            .color(self.palette.warn),
                     );
                     if ui.small_button("Copy install command").clicked() {
                         ui.ctx().copy_text("paru -S vksumi".to_string());
@@ -747,13 +760,13 @@ impl VibranceGuiApp {
                         "The app can still edit profiles, but the game will not be graded until vkSumi is installed and ENABLE_VKSUMI=1 is set. If it is installed via Flatpak or manually, make sure the layer is visible to the game, then click Refresh.",
                     )
                     .size(10.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
                 );
                 if !self.layer.problems.is_empty() {
                     ui.label(
                         RichText::new(&self.layer.problems[0])
                             .size(9.0)
-                            .color(MUTED),
+                            .color(self.palette.muted),
                     );
                 }
             });
@@ -761,16 +774,16 @@ impl VibranceGuiApp {
 
     fn draw_default_card(&mut self, ui: &mut egui::Ui) {
         Frame::new()
-            .fill(PANEL)
+            .fill(self.palette.panel)
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::same(14))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Settings").strong().color(TEXT));
+                    ui.label(RichText::new("Settings").strong().color(self.palette.text));
                     ui.label(
                         RichText::new("applies to games without a per-game override")
                             .size(10.0)
-                            .color(MUTED),
+                            .color(self.palette.muted),
                     );
                 });
                 let mut autostart = self.autostart;
@@ -780,33 +793,26 @@ impl VibranceGuiApp {
                 {
                     self.set_autostart(autostart);
                 }
-                let mut primary_only = false;
-                ui.add_enabled(
-                    false,
-                    egui::Checkbox::new(
-                        &mut primary_only,
-                        "Affect primary monitor only (not applicable to Vulkan layers)",
-                    ),
-                )
-                .on_disabled_hover_text(
-                    "vkSumi grades the game swapchain. This app cannot restrict it to one monitor.",
-                );
-                ui.add_space(4.0);
-                let mut value = self.global_value("vibrance");
+                let mut light = !self.palette.dark;
+                if ui.checkbox(&mut light, "Light theme").changed() {
+                    self.palette = if light { theme::LIGHT } else { theme::DARK };
+                    theme::apply(ui.ctx(), &self.palette);
+                }
+                let mut value = self.global_value("vibrance").clamp(0.0, 1.0);
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("Default Vibrance Level")
                             .size(11.0)
-                            .color(MUTED),
+                            .color(self.palette.muted),
                     );
                     ui.label(
-                        RichText::new(format!("{value:+.2}"))
+                        RichText::new(format!("{:.0}%", value * 100.0))
                             .monospace()
                             .size(10.0)
-                            .color(MUTED),
+                            .color(self.palette.muted),
                     );
                 });
-                let resp = value_slider(ui, &mut value, -1.0, 1.0, 0.01, true);
+                let resp = value_slider(ui, &mut value, 0.0, 1.0, 0.01, true, &self.palette);
                 if resp.changed() {
                     self.global_doc.set_f32("vibrance", value);
                     self.global_dirty = true;
@@ -819,16 +825,16 @@ impl VibranceGuiApp {
                         self.paths.global_vksumi_conf().display()
                     ))
                     .size(10.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
                 );
             });
     }
 
     fn draw_status(&self, ui: &mut egui::Ui) {
         let color = match self.status.kind {
-            StatusKind::Info => MUTED,
-            StatusKind::Good => OK,
-            StatusKind::Warn => WARN,
+            StatusKind::Info => self.palette.muted,
+            StatusKind::Good => self.palette.ok,
+            StatusKind::Warn => self.palette.warn,
         };
         ui.horizontal(|ui| {
             ui.label(RichText::new("●").color(color).size(10.0));
@@ -838,7 +844,7 @@ impl VibranceGuiApp {
                     ui.label(
                         RichText::new(format!("account {account}"))
                             .size(10.0)
-                            .color(MUTED),
+                            .color(self.palette.muted),
                     );
                 });
             }
@@ -852,7 +858,11 @@ impl VibranceGuiApp {
             .filter(|g| g.vk_enabled() || self.running_for(g.appid).is_some())
             .count();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Program Settings").strong().color(TEXT));
+            ui.label(
+                RichText::new("Program Settings")
+                    .strong()
+                    .color(self.palette.text),
+            );
             ui.add_space(6.0);
             if ui.button("Add").clicked() {
                 self.add_steam_open = true;
@@ -869,7 +879,11 @@ impl VibranceGuiApp {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if !self.scan_available {
-                    ui.label(RichText::new("scan unavailable").size(10.0).color(WARN));
+                    ui.label(
+                        RichText::new("scan unavailable")
+                            .size(10.0)
+                            .color(self.palette.warn),
+                    );
                 }
             });
         });
@@ -882,7 +896,7 @@ impl VibranceGuiApp {
                     enabled_count
                 ))
                 .size(10.0)
-                .color(MUTED),
+                .color(self.palette.muted),
             );
             ui.add_space(6.0);
             let search = egui::TextEdit::singleline(&mut self.search)
@@ -921,13 +935,13 @@ impl VibranceGuiApp {
         if indices.is_empty() {
             ui.add_space(30.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No programs yet").color(MUTED));
+                ui.label(RichText::new("No programs yet").color(self.palette.muted));
                 ui.label(
                     RichText::new(
                         "Use Add for a Steam game or Add manually for another executable.",
                     )
                     .size(11.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
                 );
             });
             return;
@@ -960,18 +974,18 @@ impl VibranceGuiApp {
         let hover = response.hovered();
         let painter = ui.painter_at(rect);
         let bg = if selected {
-            Color32::from_rgb(50, 42, 34)
+            self.palette.selected
         } else if hover {
-            Color32::from_rgb(38, 38, 44)
+            self.palette.hover
         } else {
-            PANEL
+            self.palette.panel
         };
         painter.rect_filled(rect, CornerRadius::same(8), bg);
         if selected {
             painter.rect_stroke(
                 rect,
                 CornerRadius::same(9),
-                Stroke::new(1.5, ACCENT),
+                Stroke::new(1.5, self.palette.accent),
                 StrokeKind::Inside,
             );
         }
@@ -1012,7 +1026,7 @@ impl VibranceGuiApp {
             Align2::LEFT_TOP,
             title,
             FontId::proportional(9.0),
-            TEXT,
+            self.palette.text,
         );
         let sub = if running {
             if self
@@ -1032,11 +1046,11 @@ impl VibranceGuiApp {
             "not enabled"
         };
         let sub_color = if running {
-            OK
+            self.palette.ok
         } else if enabled {
-            ACCENT
+            self.palette.accent
         } else {
-            MUTED
+            self.palette.muted
         };
         painter.text(
             egui::pos2(rect.left() + 4.0, rect.top() + 77.0),
@@ -1049,7 +1063,11 @@ impl VibranceGuiApp {
             painter.circle_filled(
                 egui::pos2(rect.right() - 10.0, rect.top() + 10.0),
                 3.5,
-                if running { OK } else { ACCENT },
+                if running {
+                    self.palette.ok
+                } else {
+                    self.palette.accent
+                },
             );
         }
     }
@@ -1125,7 +1143,7 @@ impl VibranceGuiApp {
                 ui.label(
                     RichText::new("Installed Steam games")
                         .size(11.0)
-                        .color(MUTED),
+                        .color(self.palette.muted),
                 );
                 ui.add(
                     egui::TextEdit::singleline(&mut self.add_steam_search)
@@ -1166,7 +1184,7 @@ impl VibranceGuiApp {
             .default_width(440.0)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.label(RichText::new("Executable").size(10.0).color(MUTED));
+                ui.label(RichText::new("Executable").size(10.0).color(self.palette.muted));
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.manual_exe)
@@ -1186,9 +1204,9 @@ impl VibranceGuiApp {
                         self.manual_exe = path.display().to_string();
                     }
                 });
-                ui.label(RichText::new("Display name").size(10.0).color(MUTED));
+                ui.label(RichText::new("Display name").size(10.0).color(self.palette.muted));
                 ui.add(egui::TextEdit::singleline(&mut self.manual_name).hint_text("Optional"));
-                ui.label(RichText::new("Icon path").size(10.0).color(MUTED));
+                ui.label(RichText::new("Icon path").size(10.0).color(self.palette.muted));
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.manual_icon)
@@ -1203,7 +1221,7 @@ impl VibranceGuiApp {
                         self.manual_icon = path.display().to_string();
                     }
                 });
-                ui.label(RichText::new("vkSumi config").size(10.0).color(MUTED));
+                ui.label(RichText::new("vkSumi config").size(10.0).color(self.palette.muted));
                 ui.add(
                     egui::TextEdit::singleline(&mut self.manual_config)
                         .hint_text("Optional; derived from executable name"),
@@ -1213,7 +1231,7 @@ impl VibranceGuiApp {
                         "Launch the game with ENABLE_VKSUMI=1 from its launcher; this app only manages the profile.",
                     )
                     .size(9.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
                 );
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -1234,13 +1252,17 @@ impl VibranceGuiApp {
         let Some(appid) = self.selected else {
             ui.add_space(40.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Select a game").size(18.0).color(MUTED));
+                ui.label(
+                    RichText::new("Select a game")
+                        .size(18.0)
+                        .color(self.palette.muted),
+                );
                 ui.label(
                     RichText::new(
                         "VibranceGUI edits vkSumi profiles. It does not inject into running games.",
                     )
                     .size(11.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
                 );
             });
             return;
@@ -1253,7 +1275,12 @@ impl VibranceGuiApp {
                 self.selected = None;
                 self.editor = None;
             }
-            ui.label(RichText::new(&game.name).size(20.0).strong().color(TEXT));
+            ui.label(
+                RichText::new(&game.name)
+                    .size(20.0)
+                    .strong()
+                    .color(self.palette.text),
+            );
         });
         let subtitle = if game.manual {
             format!(
@@ -1270,18 +1297,18 @@ impl VibranceGuiApp {
                 game.install_dir.display()
             )
         };
-        ui.label(RichText::new(subtitle).size(10.0).color(MUTED));
+        ui.label(RichText::new(subtitle).size(10.0).color(self.palette.muted));
         ui.add_space(10.0);
 
         let running = self.running_for(appid).cloned();
         if let Some(running) = &running {
             let (text, color) = if running.layer_mapped {
-                ("Detected · vkSumi layer mapped", OK)
+                ("Detected · vkSumi layer mapped", self.palette.ok)
             } else {
-                ("Detected · layer unconfirmed", WARN)
+                ("Detected · layer unconfirmed", self.palette.warn)
             };
             Frame::new()
-                .fill(PANEL_2)
+                .fill(self.palette.panel_2)
                 .corner_radius(CornerRadius::same(7))
                 .inner_margin(Margin::symmetric(10, 6))
                 .show(ui, |ui| {
@@ -1297,7 +1324,7 @@ impl VibranceGuiApp {
             ui.label(
                 RichText::new("No linked vkSumi profile yet.")
                     .strong()
-                    .color(TEXT),
+                    .color(self.palette.text),
             );
             if game.vk_enabled() {
                 ui.label(
@@ -1305,7 +1332,7 @@ impl VibranceGuiApp {
                         "vkSumi is enabled, but this profile is not linked yet. Launch the game once while VibranceGUI is open; it will detect the running game and link the config.",
                     )
                     .size(11.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
                 );
             } else {
                 ui.label(
@@ -1313,7 +1340,7 @@ impl VibranceGuiApp {
                         "After adding the launch option above, launch the game once with VibranceGUI open. The profile will link automatically.",
                     )
                     .size(11.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
                 );
             }
             ui.add_space(8.0);
@@ -1327,7 +1354,7 @@ impl VibranceGuiApp {
 
         if editor.doc.get_bool("enabled") == Some(false) {
             Frame::new()
-                .fill(Color32::from_rgb(52, 43, 30))
+                .fill(self.palette.panel_2)
                 .corner_radius(CornerRadius::same(7))
                 .inner_margin(Margin::symmetric(10, 7))
                 .show(ui, |ui| {
@@ -1336,13 +1363,13 @@ impl VibranceGuiApp {
                             "enabled = false is set in this profile. The color grade is paused; remove that override if you want this game graded.",
                         )
                         .size(11.0)
-                        .color(WARN),
+                        .color(self.palette.warn),
                     );
                 });
             ui.add_space(8.0);
         } else if self.global_doc.get_bool("enabled") == Some(false) {
             Frame::new()
-                .fill(Color32::from_rgb(52, 43, 30))
+                .fill(self.palette.panel_2)
                 .corner_radius(CornerRadius::same(7))
                 .inner_margin(Margin::symmetric(10, 7))
                 .show(ui, |ui| {
@@ -1351,14 +1378,14 @@ impl VibranceGuiApp {
                             "The global vkSumi config has enabled = false. Effects are paused for games that do not override it.",
                         )
                         .size(11.0)
-                        .color(WARN),
+                        .color(self.palette.warn),
                     );
                 });
             ui.add_space(8.0);
         }
         if editor.external {
             Frame::new()
-                .fill(Color32::from_rgb(52, 43, 30))
+                .fill(self.palette.panel_2)
                 .corner_radius(CornerRadius::same(7))
                 .inner_margin(Margin::symmetric(10, 7))
                 .show(ui, |ui| {
@@ -1367,13 +1394,13 @@ impl VibranceGuiApp {
                             "External config: this path is outside ~/.config/vkSumi. VibranceGUI is showing it read-only.",
                         )
                         .size(11.0)
-                        .color(WARN),
+                        .color(self.palette.warn),
                     );
                 });
             ui.add_space(8.0);
         }
 
-        ui.label(RichText::new("Basic").strong().color(TEXT));
+        ui.label(RichText::new("Basic").strong().color(self.palette.text));
         ui.add_space(2.0);
         self.draw_knob(ui, 0);
         ui.add_space(8.0);
@@ -1386,7 +1413,7 @@ impl VibranceGuiApp {
                     "Daltonize mode and the censor-box editor are not exposed yet; they remain editable in the config file.",
                 )
                 .size(9.0)
-                .color(MUTED),
+                .color(self.palette.muted),
             );
         });
         ui.add_space(10.0);
@@ -1417,7 +1444,7 @@ impl VibranceGuiApp {
             ui.label(
                 RichText::new(editor.path.display().to_string())
                     .size(9.0)
-                    .color(MUTED),
+                    .color(self.palette.muted),
             );
         }
     }
@@ -1428,7 +1455,7 @@ impl VibranceGuiApp {
                 ui.label(
                     RichText::new("Detected while running with ENABLE_VKSUMI=1.")
                         .size(11.0)
-                        .color(OK),
+                        .color(self.palette.ok),
                 );
             } else {
                 ui.label(
@@ -1436,7 +1463,7 @@ impl VibranceGuiApp {
                         "Launch this executable with ENABLE_VKSUMI=1 to activate the layer.",
                     )
                     .size(11.0)
-                    .color(WARN),
+                    .color(self.palette.warn),
                 );
                 let exe = game
                     .manual_exe
@@ -1445,7 +1472,7 @@ impl VibranceGuiApp {
                     .unwrap_or_else(|| "game".into());
                 let command = format!("ENABLE_VKSUMI=1 {exe}");
                 Frame::new()
-                    .fill(PANEL_2)
+                    .fill(self.palette.panel_2)
                     .corner_radius(CornerRadius::same(6))
                     .inner_margin(Margin::symmetric(8, 6))
                     .show(ui, |ui| {
@@ -1464,7 +1491,7 @@ impl VibranceGuiApp {
             ui.label(
                 RichText::new("DISABLE_VKSUMI=1 is set — vkSumi is explicitly disabled.")
                     .size(11.0)
-                    .color(WARN),
+                    .color(self.palette.warn),
             );
             return;
         }
@@ -1472,25 +1499,25 @@ impl VibranceGuiApp {
             ui.label(
                 RichText::new("vkSumi is enabled in this game's Steam launch options.")
                     .size(11.0)
-                    .color(OK),
+                    .color(self.palette.ok),
             );
         } else {
             ui.label(
                 RichText::new("vkSumi is not enabled for this game yet.")
                     .size(11.0)
-                    .color(WARN),
+                    .color(self.palette.warn),
             );
             ui.label(
                 RichText::new(
                     "Add the line below once in Steam → Properties → Launch Options. VibranceGUI does not edit Steam's files.",
                 )
                 .size(10.0)
-                .color(MUTED),
+                .color(self.palette.muted),
             );
             let suggestion = game.suggested_launch_options();
             let preview = suggestion.as_str();
             Frame::new()
-                .fill(PANEL_2)
+                .fill(self.palette.panel_2)
                 .corner_radius(CornerRadius::same(6))
                 .inner_margin(Margin::symmetric(8, 6))
                 .show(ui, |ui| {
@@ -1504,7 +1531,7 @@ impl VibranceGuiApp {
 
     fn draw_knob(&mut self, ui: &mut egui::Ui, index: usize) {
         let knob = KNOBS[index];
-        let mut value = self.effective_value(knob.key);
+        let mut value = self.effective_value(knob.key).clamp(knob.min, knob.max);
         let Some(editor) = &mut self.editor else {
             return;
         };
@@ -1512,9 +1539,9 @@ impl VibranceGuiApp {
         let enabled = !editor.external;
         ui.horizontal(|ui| {
             ui.label(RichText::new(knob.label).size(12.0).color(if overridden {
-                TEXT
+                self.palette.text
             } else {
-                MUTED
+                self.palette.muted
             }));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if overridden && enabled && ui.small_button("reset").clicked() {
@@ -1527,11 +1554,23 @@ impl VibranceGuiApp {
                     RichText::new(format!("{value:+.2}"))
                         .size(11.0)
                         .monospace()
-                        .color(if overridden { ACCENT } else { MUTED }),
+                        .color(if overridden {
+                            self.palette.accent
+                        } else {
+                            self.palette.muted
+                        }),
                 );
             });
         });
-        let resp = value_slider(ui, &mut value, knob.min, knob.max, knob.step, enabled);
+        let resp = value_slider(
+            ui,
+            &mut value,
+            knob.min,
+            knob.max,
+            knob.step,
+            enabled,
+            &self.palette,
+        );
         if resp.changed()
             && enabled
             && let Some(editor) = &mut self.editor
@@ -1545,7 +1584,7 @@ impl VibranceGuiApp {
 
     fn draw_bottom_status(&mut self, ui: &mut egui::Ui) {
         Frame::new()
-            .fill(PANEL)
+            .fill(self.palette.panel)
             .inner_margin(Margin::symmetric(16, 6))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -1553,11 +1592,21 @@ impl VibranceGuiApp {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if let Some(editor) = &self.editor {
                             if editor.external {
-                                ui.label(RichText::new("read-only").size(10.0).color(WARN));
+                                ui.label(
+                                    RichText::new("read-only")
+                                        .size(10.0)
+                                        .color(self.palette.warn),
+                                );
                             } else if editor.dirty {
-                                ui.label(RichText::new("saving…").size(10.0).color(MUTED));
+                                ui.label(
+                                    RichText::new("saving…")
+                                        .size(10.0)
+                                        .color(self.palette.muted),
+                                );
                             } else {
-                                ui.label(RichText::new("saved").size(10.0).color(MUTED));
+                                ui.label(
+                                    RichText::new("saved").size(10.0).color(self.palette.muted),
+                                );
                             }
                         }
                     });
@@ -1709,6 +1758,7 @@ fn value_slider(
     max: f32,
     step: f32,
     enabled: bool,
+    palette: &Palette,
 ) -> egui::Response {
     let width = ui
         .available_width()
@@ -1746,23 +1796,30 @@ fn value_slider(
         egui::pos2(left, center_y - 1.5),
         egui::pos2(right, center_y + 1.5),
     );
-    painter.rect_filled(rail, CornerRadius::same(2), PANEL_2);
+    painter.rect_filled(rail, CornerRadius::same(2), palette.panel_2);
     if fraction > 0.0 {
         let fill = egui::Rect::from_min_max(
             egui::pos2(left, center_y - 1.5),
             egui::pos2(thumb_x, center_y + 1.5),
         );
-        painter.rect_filled(fill, CornerRadius::same(2), ACCENT);
+        painter.rect_filled(fill, CornerRadius::same(2), palette.accent);
     }
     painter.circle_filled(
         egui::pos2(thumb_x, center_y),
         6.0,
-        if enabled { Color32::WHITE } else { MUTED },
+        if enabled { palette.text } else { palette.muted },
     );
     painter.circle_stroke(
         egui::pos2(thumb_x, center_y),
         6.0,
-        Stroke::new(1.0, if enabled { ACCENT } else { PANEL_2 }),
+        Stroke::new(
+            1.0,
+            if enabled {
+                palette.accent
+            } else {
+                palette.panel_2
+            },
+        ),
     );
     response
 }
