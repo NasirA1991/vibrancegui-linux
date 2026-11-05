@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VibranceGUI for Linux
+Comment=Manage vkSumi color profiles for Steam games
+Exec=vibrancegui
+Icon=vibrancegui
+Terminal=false
+Categories=Utility;Game;
+Keywords=vkSumi;Vibrance;Steam;Color;Gaming;
+StartupWMClass=vibrancegui

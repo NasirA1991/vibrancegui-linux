@@ -1,0 +1,40 @@
+[package]
+name = "vibrancegui-linux"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "A lightweight VibranceGUI-style vkSumi profile manager for Linux"
+license = "MIT"
+
+[[bin]]
+name = "vibrancegui"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3"
+
+[dependencies]
+eframe = { version = "0.37", default-features = false, features = [
+    "glow",
+    "wayland",
+    "x11",
+    "default_fonts",
+    "system_fonts",
+    "clipboard",
+] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "6"
+shell-words = "1.1"
+anyhow = "1"
+thiserror = "2"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 1
