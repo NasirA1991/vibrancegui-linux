@@ -267,6 +267,41 @@ impl VibranceGuiApp {
         let _ = std::process::Command::new("xdg-open").arg(url).spawn();
     }
 
+    fn draw_settings_viewport(&mut self, ctx: &egui::Context) {
+        let Some(appid) = self.selected else {
+            return;
+        };
+        let Some(game) = self.game(appid) else {
+            return;
+        };
+        let title = format!("{} — vkSumi settings", game.name);
+        let viewport_id = egui::ViewportId::from_hash_of(("game-settings", appid));
+        let builder = egui::ViewportBuilder::default()
+            .with_title(title)
+            .with_inner_size([430.0, 620.0])
+            .with_min_inner_size([360.0, 460.0]);
+        let mut close = false;
+        let mut back = false;
+        ctx.show_viewport_immediate(viewport_id, builder, |ui, _class| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.add_space(6.0);
+                        back = self.draw_detail(ui);
+                        ui.add_space(6.0);
+                    });
+            });
+            if ui.ctx().input(|i| i.viewport().close_requested()) {
+                close = true;
+            }
+        });
+        if close || back {
+            self.selected = None;
+            self.editor = None;
+        }
+    }
+
     fn draw_about(&mut self, ctx: &egui::Context) {
         let mut open = self.about_open;
         egui::Window::new("About")
@@ -719,34 +754,6 @@ impl VibranceGuiApp {
             let _ = self.state.save(&self.paths);
             self.needs_editor_refresh = true;
         }
-        if self.editor.is_none() {
-            let running_id = self.observed.iter().find_map(|o| {
-                if o.explicitly_disabled {
-                    return None;
-                }
-                if let Some(appid) = o.appid {
-                    return self.games.iter().any(|g| g.appid == appid).then_some(appid);
-                }
-                self.games.iter().find_map(|g| {
-                    if !g.manual {
-                        return None;
-                    }
-                    let stem = g
-                        .manual_exe
-                        .as_ref()
-                        .and_then(|p| p.file_stem())
-                        .and_then(|s| s.to_str())
-                        .unwrap_or_default();
-                    manual_exe_matches(g.manual_exe.as_deref(), &o.exe, stem).then_some(g.appid)
-                })
-            });
-            if let Some(id) = running_id
-                && self.selected != Some(id)
-            {
-                self.selected = Some(id);
-                self.needs_editor_refresh = true;
-            }
-        }
         if self.needs_editor_refresh {
             self.open_selected();
         }
@@ -838,20 +845,27 @@ impl VibranceGuiApp {
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.menu_button("☰", |ui| {
-                            ui.label(RichText::new("Theme").strong());
-                            for (label, mode) in [
-                                ("System default", "auto"),
-                                ("Dark", "dark"),
-                                ("Light", "light"),
-                            ] {
-                                if ui.radio(self.theme_mode == mode, label).clicked() {
-                                    self.set_theme(mode, ui.ctx());
-                                    ui.close();
+                            ui.menu_button("Theme", |ui| {
+                                for (label, mode) in [
+                                    ("System default", "auto"),
+                                    ("Dark", "dark"),
+                                    ("Light", "light"),
+                                ] {
+                                    if ui.radio(self.theme_mode == mode, label).clicked() {
+                                        self.set_theme(mode, ui.ctx());
+                                        ui.close();
+                                    }
                                 }
-                            }
+                            });
                             ui.separator();
                             if ui.button("About VibranceGUI").clicked() {
                                 self.about_open = true;
+                                ui.close();
+                            }
+                            ui.separator();
+                            if ui.button("Quit").clicked() {
+                                self.quit_requested = true;
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                                 ui.close();
                             }
                         });
@@ -1007,7 +1021,7 @@ impl VibranceGuiApp {
             );
             ui.label(RichText::new("?").strong().color(self.palette.accent))
                 .on_hover_text(
-                    "Only Steam games with ENABLE_VKSUMI=1 in Launch Options (or currently running with vkSumi) are shown. Non-Steam shortcuts and manual/detected games are always shown. To add a hidden Steam game: Steam → Properties → Launch Options → ENABLE_VKSUMI=1 %command%, then Refresh.",
+                    "Only games with ENABLE_VKSUMI=1 are shown. Add it in Steam → Properties → Launch Options, then Refresh.",
                 );
             ui.add_space(6.0);
             if ui.button("Add").clicked() {
@@ -1369,7 +1383,12 @@ impl VibranceGuiApp {
         }
     }
 
-    fn draw_detail(&mut self, ui: &mut egui::Ui) {
+    fn draw_detail(&mut self, ui: &mut egui::Ui) -> bool {
+        self.draw_detail_inner(ui);
+        self.selected.is_none()
+    }
+
+    fn draw_detail_inner(&mut self, ui: &mut egui::Ui) {
         let Some(appid) = self.selected else {
             ui.add_space(40.0);
             ui.vertical_centered(|ui| {
@@ -1666,12 +1685,15 @@ impl VibranceGuiApp {
         };
         let overridden = editor.doc.get_f32(knob.key).is_some();
         let enabled = !editor.external;
+        let mut edited: Option<f32> = None;
         ui.horizontal(|ui| {
             ui.label(RichText::new(knob.label).size(12.0).color(if overridden {
                 self.palette.text
             } else {
                 self.palette.muted
             }));
+            ui.label(RichText::new("?").size(10.0).color(self.palette.accent))
+                .on_hover_text(knob_help(knob.key));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if overridden && enabled && ui.small_button("reset").clicked() {
                     editor.doc.remove_key(knob.key);
@@ -1679,23 +1701,24 @@ impl VibranceGuiApp {
                     editor.last_change = Instant::now();
                     self.status = StatusMessage::info(format!("{} reset to default", knob.label));
                 }
-                let shown = if knob.key == "vibrance" {
-                    format!("{:.0}%", value * 100.0)
-                } else {
-                    format!("{value:+.2}")
-                };
-                ui.label(
-                    RichText::new(shown)
-                        .size(11.0)
-                        .monospace()
-                        .color(if overridden {
-                            self.palette.accent
-                        } else {
-                            self.palette.muted
-                        }),
-                );
+                let mut typed = value;
+                let drag = egui::DragValue::new(&mut typed)
+                    .range(knob.min..=knob.max)
+                    .speed(knob.step)
+                    .max_decimals(3);
+                if ui.add(drag).changed() {
+                    edited = Some(typed);
+                }
             });
         });
+        if let Some(new_value) = edited {
+            value = new_value;
+            if enabled {
+                editor.doc.set_f32(knob.key, value);
+                editor.dirty = true;
+                editor.last_change = Instant::now();
+            }
+        }
         let resp = value_slider(
             ui,
             &mut value,
@@ -1724,6 +1747,11 @@ impl VibranceGuiApp {
                 ui.horizontal(|ui| {
                     self.draw_status(ui);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                                .size(10.0)
+                                .color(self.palette.muted),
+                        );
                         if let Some(editor) = &self.editor {
                             if editor.external {
                                 ui.label(
@@ -1821,6 +1849,14 @@ impl eframe::App for VibranceGuiApp {
             // Close button means "hide to tray", not "quit".
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            let _ = std::process::Command::new("notify-send")
+                .args([
+                    "-a",
+                    "VibranceGUI for Linux",
+                    "Still running in the tray",
+                    "Use the tray icon to reopen. Quit from the ☰ menu.",
+                ])
+                .spawn();
         }
     }
 
@@ -1842,27 +1878,18 @@ impl eframe::App for VibranceGuiApp {
             self.draw_bottom_status(ui);
         });
         egui::CentralPanel::default().show(ui, |ui| {
-            if self.selected.is_some() {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.add_space(8.0);
-                        self.draw_detail(ui);
-                        ui.add_space(8.0);
-                    });
-            } else {
+            ui.add_space(8.0);
+            if !self.layer.usable {
+                self.draw_missing_layer(ui);
                 ui.add_space(8.0);
-                if !self.layer.usable {
-                    self.draw_missing_layer(ui);
-                    ui.add_space(8.0);
-                }
-                self.draw_default_card(ui);
-                ui.add_space(10.0);
-                self.draw_library(ui);
-                ui.add_space(6.0);
             }
+            self.draw_default_card(ui);
+            ui.add_space(10.0);
+            self.draw_library(ui);
+            ui.add_space(6.0);
         });
 
+        self.draw_settings_viewport(&ctx);
         self.draw_add_steam_window(&ctx);
         self.draw_add_manual_window(&ctx);
         self.draw_about(&ctx);
@@ -1886,6 +1913,41 @@ fn now_unix() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+fn knob_help(key: &str) -> &'static str {
+    match key {
+        "vibrance" => {
+            "Smarter saturation. 0% is neutral; higher values boost colorful areas without washing out skin tones."
+        }
+        "saturation" => "Overall color intensity. -1 is grayscale, +1 is heavily saturated.",
+        "temperature" => "Warm (+) or cool (-) white balance.",
+        "contrast" => "Increases or decreases the difference between light and dark areas.",
+        "brightness" => "Raises or lowers overall brightness.",
+        "gamma" => "Adjusts midtones without moving pure black or white.",
+        "exposure" => "Exposure in EV stops; positive brightens the whole image.",
+        "hue_deg" => "Rotates all colors around the hue wheel, in degrees.",
+        "red_gain" => "Scales the red channel up or down.",
+        "green_gain" => "Scales the green channel up or down.",
+        "blue_gain" => "Scales the blue channel up or down.",
+        "shadows" => "Lifts or crushes the darkest tonal range.",
+        "midtones" => "Adjusts the middle tonal range.",
+        "highlights" => "Lifts or recovers the brightest tonal range.",
+        "red_hue" => "Shifts only red hues.",
+        "green_hue" => "Shifts only green hues.",
+        "blue_hue" => "Shifts only blue hues.",
+        "cyan_hue" => "Shifts only cyan hues.",
+        "magenta_hue" => "Shifts only magenta hues.",
+        "yellow_hue" => "Shifts only yellow hues.",
+        "shadow_tint" => "Strength of colored tinting in the shadows.",
+        "shadow_tint_hue" => "Hue used for shadow tinting, in degrees.",
+        "highlight_tint" => "Strength of colored tinting in the highlights.",
+        "highlight_tint_hue" => "Hue used for highlight tinting, in degrees.",
+        "vignette" => "Darkens the frame edges.",
+        "daltonize_severity" => "How strongly color-vision-deficiency correction is applied.",
+        "daltonize_strength" => "Overall strength of the daltonize effect.",
+        _ => "vkSumi color control.",
+    }
 }
 
 fn manual_exe_matches(path: Option<&Path>, observed: &str, stem: &str) -> bool {

@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.2.2 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.2.3 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -19,11 +19,11 @@ VibranceGUI for Linux v0.2.2 is a **vkSumi profile editor with Steam discovery a
   - otherwise vkSumi's per-executable `~/.config/vkSumi/games/<exe>.conf`.
 - Edits the profile live; vkSumi hot-reloads it.
 - A compact **VibranceGUI-style window**: Settings card, default vibrance, Program Settings with icons, Add / Add manually / Remove.
-- Game settings open **inline in the main window**, with a back button — no child window trapped inside the app.
+- Game settings open in a **separate native egui viewport**, so they can be moved independently; Add manually uses a native file chooser.
 - **About** under ☰ with version, GitHub, and issue links.
-- **Theme menu** under ☰: **System default**, **Dark**, or **Light**, persisted across launches. `--light`/`--dark` still override for a session.
+- **☰ menu** with nested Theme (System default / Dark / Light), About, and Quit. Closing the window hides to the tray and sends a desktop notification. The footer shows the app version.
 - A global default vibrance slider that writes only `vibrance` to the global vkSumi config.
-- **All numeric vkSumi sliders** in the per-game Advanced section: saturation, temperature, contrast, brightness, gamma, exposure, hue, RGB gains, shadows/midtones/highlights, six hue bands, split toning, vignette, and daltonize strength/severity.
+- **All numeric vkSumi sliders** in the per-game Advanced section: saturation, temperature, contrast, brightness, gamma, exposure, hue, RGB gains, shadows/midtones/highlights, six hue bands, split toning, vignette, and daltonize strength/severity. Values can be typed directly, and each setting has a **?** explanation.
 - **Game icons**: Steam capsule/artwork from the local cache or Steam CDN; non-Steam and Steam-shortcut icons extracted directly from their Windows `.exe` resources and cached in `~/.cache/vibrancegui/icons`; manual icon override still works.
 - **Non-Steam games**: add any Linux/Proton executable manually, with an optional icon and config path, using a native file picker. Running processes are matched by executable name.
 - **Enabled-first game list**: normal Steam games are only shown when `ENABLE_VKSUMI=1` is present in their launch options (or they are currently running with vkSumi). Steam shortcuts and manually added/auto-detected non-Steam games remain visible. A **?** next to Program Settings explains how to enable a hidden game.
