@@ -25,11 +25,71 @@ use gtk4 as gtk;
 use libadwaita as adw;
 
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
 
 use config_doc::{ConfigDoc, KNOBS};
 use paths::AppPaths;
 use state::SavedState;
 use steam::SteamData;
+
+#[derive(Debug, Clone, Copy)]
+enum TrayAction {
+    Show,
+    Quit,
+}
+
+struct GtkTray {
+    tx: Sender<TrayAction>,
+}
+
+impl ksni::Tray for GtkTray {
+    const MENU_ON_ACTIVATE: bool = false;
+    fn id(&self) -> String {
+        "vibrancegui".into()
+    }
+    fn title(&self) -> String {
+        "VibranceGUI for Linux".into()
+    }
+    fn icon_name(&self) -> String {
+        "vibrancegui".into()
+    }
+    fn activate(&mut self, _x: i32, _y: i32) {
+        let _ = self.tx.send(TrayAction::Show);
+    }
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::StandardItem;
+        vec![
+            StandardItem {
+                label: "Show VibranceGUI".into(),
+                activate: Box::new(|t: &mut Self| {
+                    let _ = t.tx.send(TrayAction::Show);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            ksni::MenuItem::Separator,
+            StandardItem {
+                label: "Quit".into(),
+                activate: Box::new(|t: &mut Self| {
+                    let _ = t.tx.send(TrayAction::Quit);
+                }),
+                ..Default::default()
+            }
+            .into(),
+        ]
+    }
+}
+
+fn spawn_tray() -> (
+    Option<ksni::blocking::Handle<GtkTray>>,
+    Receiver<TrayAction>,
+) {
+    use ksni::blocking::TrayMethods;
+    let (tx, rx) = mpsc::channel();
+    let handle = GtkTray { tx }.spawn().ok();
+    (handle, rx)
+}
 
 fn main() -> gtk::glib::ExitCode {
     let app = adw::Application::builder()
@@ -250,6 +310,19 @@ fn build_ui(app: &adw::Application) {
     window.set_titlebar(Some(&header));
     window.set_child(Some(&stack));
     window.present();
+
+    let (tray, tray_rx) = spawn_tray();
+    let tray_window = window.clone();
+    gtk::glib::timeout_add_local(Duration::from_millis(200), move || {
+        let _keep_alive = &tray;
+        while let Ok(action) = tray_rx.try_recv() {
+            match action {
+                TrayAction::Show => tray_window.present(),
+                TrayAction::Quit => tray_window.close(),
+            }
+        }
+        gtk::glib::ControlFlow::Continue
+    });
 }
 
 fn config_path_for(
