@@ -42,7 +42,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libwayland-dev \
+            libgtk-4-dev libadwaita-1-dev libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libwayland-dev \
             libx11-dev libxcursor-dev libxi-dev libxrandr-dev libxinerama-dev \
             libfontconfig1-dev pkg-config wget ca-certificates
 
@@ -56,14 +56,14 @@ jobs:
         run: cargo test --all-targets --locked
 
       - name: Build release
-        run: cargo build --release --locked
+        run: cargo build --release --locked --bin vibrancegui-gtk
 
       - name: Build AppImage
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/scalable/apps
-          cp target/release/vibrancegui AppDir/usr/bin/vibrancegui
+          cp target/release/vibrancegui-gtk AppDir/usr/bin/vibrancegui
           cp packaging/vibrancegui.desktop AppDir/usr/share/applications/vibrancegui.desktop
           cp packaging/vibrancegui.svg AppDir/usr/share/icons/hicolor/scalable/apps/vibrancegui.svg
           cp packaging/vibrancegui.desktop AppDir/vibrancegui.desktop
@@ -75,7 +75,7 @@ jobs:
           chmod +x appimagetool-x86_64.AppImage
           ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 \
             ./appimagetool-x86_64.AppImage AppDir "dist/vibrancegui-linux-${VERSION}-x86_64.AppImage"
-          cp target/release/vibrancegui dist/vibrancegui
+          cp target/release/vibrancegui-gtk dist/vibrancegui
           (cd dist && sha256sum vibrancegui "vibrancegui-linux-${VERSION}-x86_64.AppImage" > SHA256SUMS)
 
       - name: Create GitHub release

@@ -20,7 +20,6 @@ pub mod vdf;
 mod vksumi;
 
 use adw::prelude::*;
-use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
@@ -92,9 +91,44 @@ fn spawn_tray() -> (
 }
 
 fn main() -> gtk::glib::ExitCode {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--doctor") {
+        let paths = AppPaths::discover().expect("home directory");
+        let layer = vksumi::VkSumiStatus::detect(&paths);
+        let steam = SteamData::discover();
+        println!("VibranceGUI for Linux doctor (GTK)");
+        println!("  version: {}", env!("CARGO_PKG_VERSION"));
+        println!("  vkSumi usable: {}", layer.usable);
+        println!("  Steam games: {}", steam.games.len());
+        for game in &steam.games {
+            println!(
+                "    {:>10}  {:<40} enabled={}",
+                game.appid,
+                game.name,
+                game.vk_enabled()
+            );
+        }
+        return gtk::glib::ExitCode::SUCCESS;
+    }
     let app = adw::Application::builder()
         .application_id("io.github.nasira1991.VibranceGUI")
         .build();
+    app.add_main_option(
+        "hidden",
+        gtk::glib::Char::from(0),
+        gtk::glib::OptionFlags::NONE,
+        gtk::glib::OptionArg::None,
+        "Start hidden in the tray",
+        None,
+    );
+    app.add_main_option(
+        "no-tray",
+        gtk::glib::Char::from(0),
+        gtk::glib::OptionFlags::NONE,
+        gtk::glib::OptionArg::None,
+        "Disable tray integration",
+        None,
+    );
     app.connect_activate(build_ui);
     app.run()
 }
@@ -283,7 +317,7 @@ fn build_ui(app: &adw::Application) {
     label.set_xalign(0.0);
     settings_box.append(&label);
     let global_path = paths.global_vksumi_conf();
-    let mut doc = ConfigDoc::load(&global_path)
+    let doc = ConfigDoc::load(&global_path)
         .ok()
         .flatten()
         .unwrap_or_else(|| {
@@ -340,7 +374,7 @@ fn build_ui(app: &adw::Application) {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
         let paths = add_steam_paths.clone();
         let dialog_clone = dialog.clone();
-        let mut state = SavedState::load(&paths);
+        let state = SavedState::load(&paths);
         for game in &steam_games {
             if state.tracked_steam.contains(&game.appid) {
                 continue;
@@ -445,7 +479,13 @@ fn build_ui(app: &adw::Application) {
     stack.add_named(&content, Some("games"));
     window.set_titlebar(Some(&header));
     window.set_child(Some(&stack));
-    window.present();
+    let hidden = std::env::args().any(|a| a == "--hidden");
+    if !hidden {
+        window.present();
+    }
+    if std::env::args().any(|a| a == "--no-tray") {
+        return;
+    }
 
     let (tray, tray_rx) = spawn_tray();
     let tray_window = window.clone();
@@ -594,7 +634,7 @@ fn build_detail_page(
         )));
         return page.upcast();
     };
-    let mut doc = match ConfigDoc::load(&path) {
+    let doc = match ConfigDoc::load(&path) {
         Ok(Some(doc)) => doc,
         Ok(None) => {
             let mut d = ConfigDoc {

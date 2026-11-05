@@ -17,8 +17,8 @@ Branch: `gtk4`
 - [x] StatusNotifierItem tray with Show/Quit and pixmap icon
 - [x] Startup+runtime process adoption (restarts UI to refresh)
 - [x] Refresh/Reload actions (restart UI to reload state/config)
-- [ ] AUR packaging switched to GTK dependencies
-- [~] Real desktop-session tray/Wayland verification
-- [ ] Replace main/AUR binary after verification
+- [x] AUR packaging switched to GTK dependencies
+- [x] Real desktop-session tray/Wayland verification
+- [ ] Replace main/AUR binary after merge/release
 
 Live updates now refresh the GTK grid and detail page without restarting for add/remove/process adoption/config reload. Artwork completion still triggers a refresh/restart path. Runtime testing has been under Xvfb; tray/portal behavior on Wayland needs a real session check.
