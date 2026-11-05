@@ -107,7 +107,7 @@ A prebuilt binary is available on the [GitHub release page](https://github.com/N
 
 ## UI
 
-The UI is **egui/eframe** — the lightweight native Rust frontend. The GTK4 experiment is archived on the `gtk4` branch. The layout mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open inline with Basic and Advanced sliders.
+The UI is **egui/eframe** — the lightweight native Rust frontend. The layout mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open in a separate native window with Basic and Advanced sliders.
 
 The theme is under the **☰** menu: **System default**, **Dark**, or **Light**. The choice is saved in the app state. `--light` / `--dark` can still force a session theme. The **About** dialog there shows the version and repository link.
 
