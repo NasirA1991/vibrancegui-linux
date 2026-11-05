@@ -10,9 +10,6 @@ depends=(
   'gcc-libs'
   'glibc'
   'fontconfig'
-  'openssl'
-  'gtk4'
-  'libadwaita'
   'libglvnd'
   'wayland'
   'libxkbcommon'
@@ -33,7 +30,7 @@ sha256sums=('SKIP')
 
 build() {
   cd "$pkgname-$pkgver"
-  cargo build --release --locked --bin vibrancegui-gtk
+  cargo build --release --locked
 }
 
 check() {
@@ -43,7 +40,7 @@ check() {
 
 package() {
   cd "$pkgname-$pkgver"
-  install -Dm755 target/release/vibrancegui-gtk "$pkgdir/usr/bin/vibrancegui"
+  install -Dm755 target/release/vibrancegui "$pkgdir/usr/bin/vibrancegui"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 packaging/vibrancegui.desktop "$pkgdir/usr/share/applications/vibrancegui.desktop"

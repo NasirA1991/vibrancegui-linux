@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.2.1 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.2.2 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -87,7 +87,7 @@ chmod +x vibrancegui-linux-*.AppImage
 ./vibrancegui-linux-*.AppImage
 ```
 
-The AppImage uses the host's GTK4/libadwaita, Vulkan/GL, Wayland/X11 libraries and desktop portal.
+The AppImage uses the host's Vulkan/GL/Wayland/X11 libraries and desktop portal.
 
 ### Build from source
 
@@ -107,7 +107,7 @@ A prebuilt binary is available on the [GitHub release page](https://github.com/N
 
 ## UI
 
-The UI is **GTK4 + libadwaita**. The layout mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open inline in the same window with Basic and Advanced sliders. Themes, native file dialogs, tray integration and autostart are handled through GTK/libadwaita and StatusNotifierItem.
+The UI is **egui/eframe** — the lightweight native Rust frontend. The GTK4 experiment is archived on the `gtk4` branch. The layout mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open inline with Basic and Advanced sliders.
 
 The theme is under the **☰** menu: **System default**, **Dark**, or **Light**. The choice is saved in the app state. `--light` / `--dark` can still force a session theme. The **About** dialog there shows the version and repository link.
 
@@ -181,8 +181,7 @@ If running from the build tree, use `target/release/vibrancegui --doctor`.
 ```text
 src/
   main.rs        app bootstrap, theme, doctor
-  bin/vibrancegui-gtk.rs  GTK4/libadwaita frontend
-  app.rs         legacy egui frontend (kept during transition)
+  app.rs         egui UI, game grid, profile editor
   steam.rs       Steam roots, libraries, manifests, launch options, artwork
   vdf.rs         read-only Valve KeyValues parser
   process.rs     /proc environment/cmdline/maps observation
