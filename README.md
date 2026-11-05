@@ -76,6 +76,17 @@ yay -S vibrancegui-linux
 
 If your AUR helper does not see the new package yet, refresh its databases first (`paru -Sy`).
 
+### AppImage
+
+Download `vibrancegui-linux-<version>-x86_64.AppImage` from the [latest release](https://github.com/NasirA1991/vibrancegui-linux/releases/latest), then:
+
+```bash
+chmod +x vibrancegui-linux-*.AppImage
+./vibrancegui-linux-*.AppImage
+```
+
+The AppImage uses the host's Vulkan/GL/Wayland/X11 libraries and desktop portal.
+
 ### Build from source
 
 ```bash
