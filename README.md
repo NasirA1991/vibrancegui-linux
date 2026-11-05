@@ -44,10 +44,12 @@ VibranceGUI for Linux v0.1 is a **vkSumi profile editor with Steam discovery and
 ### AUR (Arch / CachyOS)
 
 ```bash
+paru -S vibrancegui-linux
+# or
 yay -S vibrancegui-linux
 ```
 
-or use your preferred AUR helper.
+If your AUR helper does not see the new package yet, refresh its databases first (`paru -Sy`).
 
 ### Build from source
 
