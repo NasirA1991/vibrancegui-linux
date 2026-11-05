@@ -10,6 +10,7 @@ pub struct Shortcut {
     pub exe: PathBuf,
     pub start_dir: Option<PathBuf>,
     pub icon: Option<PathBuf>,
+    pub launch_options: String,
 }
 
 #[derive(Debug)]
@@ -58,12 +59,21 @@ pub fn parse_file(path: &Path) -> Result<Vec<Shortcut>> {
             Value::String(s) if !s.is_empty() => Some(PathBuf::from(unquote(s))),
             _ => None,
         });
+        let launch_options = fields
+            .get("LaunchOptions")
+            .or_else(|| fields.get("launchoptions"))
+            .and_then(|v| match v {
+                Value::String(s) => Some(s.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
         out.push(Shortcut {
             appid,
             name,
             exe,
             start_dir,
             icon,
+            launch_options,
         });
     }
     Ok(out)

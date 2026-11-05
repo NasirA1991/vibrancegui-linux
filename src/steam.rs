@@ -178,7 +178,11 @@ impl SteamData {
                         .unwrap_or_default();
                     let artwork =
                         shortcut_artwork(root, account, shortcut.appid, shortcut.icon.as_deref());
-                    let launch_options = map.get(&shortcut.appid).cloned().unwrap_or_default();
+                    let launch_options = if shortcut.launch_options.trim().is_empty() {
+                        map.get(&shortcut.appid).cloned().unwrap_or_default()
+                    } else {
+                        shortcut.launch_options
+                    };
                     games.push(SteamGame {
                         appid: shortcut.appid,
                         name: shortcut.name,

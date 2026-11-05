@@ -416,13 +416,13 @@ impl VibranceGuiApp {
             return Some(expand_user_path(&env.to_string_lossy(), &self.paths.home));
         }
         if game.shortcut
-            && let Some(exe) = game.manual_exe.as_ref().and_then(|p| p.file_name())
+            && let Some(stem) = game
+                .manual_exe
+                .as_ref()
+                .and_then(|p| p.file_stem())
+                .and_then(|s| s.to_str())
         {
-            return Some(
-                self.paths
-                    .vksumi_games_dir()
-                    .join(format!("{}.conf", exe.to_string_lossy())),
-            );
+            return Some(self.paths.vksumi_games_dir().join(format!("{stem}.conf")));
         }
         self.observed_path(game.appid)
     }
@@ -792,6 +792,8 @@ impl VibranceGuiApp {
 
     fn set_selected(&mut self, appid: u32) {
         self.selected = Some(appid);
+        // Reload from disk so a config edited outside the app is visible.
+        self.editor = None;
         self.open_selected();
     }
 
@@ -1677,8 +1679,13 @@ impl VibranceGuiApp {
                     editor.last_change = Instant::now();
                     self.status = StatusMessage::info(format!("{} reset to default", knob.label));
                 }
+                let shown = if knob.key == "vibrance" {
+                    format!("{:.0}%", value * 100.0)
+                } else {
+                    format!("{value:+.2}")
+                };
                 ui.label(
-                    RichText::new(format!("{value:+.2}"))
+                    RichText::new(shown)
                         .size(11.0)
                         .monospace()
                         .color(if overridden {
@@ -1767,6 +1774,10 @@ impl VibranceGuiApp {
         self.textures.clear();
         self.texture_attempted.clear();
         self.rebuild_games();
+        if self.selected.is_some() {
+            self.editor = None;
+            self.open_selected();
+        }
         self.status = StatusMessage::info("Steam library refreshed");
     }
 }
