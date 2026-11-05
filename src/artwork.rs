@@ -47,3 +47,43 @@ fn fetch(url: &str) -> Result<Vec<u8>> {
     let body = response.body_mut().read_to_vec()?;
     Ok(body)
 }
+
+/// Extract the first group icon from a Windows PE executable into the cache.
+/// This is what makes non-Steam shortcuts show their real game icon instead
+/// of a generated initial tile.
+pub fn extract_exe_icon(cache_dir: &Path, exe: &Path) -> Option<PathBuf> {
+    if !exe.is_file() {
+        return None;
+    }
+    let is_exe = exe
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("exe"))
+        .unwrap_or(false);
+    if !is_exe {
+        return None;
+    }
+
+    let hash = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        exe.hash(&mut h);
+        h.finish()
+    };
+    let dir = cache_dir.join("icons");
+    std::fs::create_dir_all(&dir).ok()?;
+    let dest = dir.join(format!("{hash:016x}.ico"));
+    if dest.is_file() {
+        return Some(dest);
+    }
+
+    let extractor = icoextract_rs::IconExtractor::from_path(exe).ok()?;
+    let icon = extractor
+        .get_icon(icoextract_rs::IconSelector::Index(0))
+        .ok()?;
+    let bytes = icon.to_ico_bytes().ok()?;
+    let tmp = dest.with_extension("ico.part");
+    std::fs::write(&tmp, bytes).ok()?;
+    std::fs::rename(&tmp, &dest).ok()?;
+    Some(dest)
+}

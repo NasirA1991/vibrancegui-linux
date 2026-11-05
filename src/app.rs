@@ -272,7 +272,7 @@ impl VibranceGuiApp {
                 .parent()
                 .map(Path::to_path_buf)
                 .unwrap_or_default(),
-            artwork: manual.icon.clone(),
+            artwork: manual.icon.clone().filter(|p| p.is_file()),
             launch_options: String::new(),
             manual: true,
             manual_exe: Some(manual.exe.clone()),
@@ -295,6 +295,13 @@ impl VibranceGuiApp {
                 .iter()
                 .map(|(id, m)| Self::manual_to_game(*id, m)),
         );
+        for game in &mut games {
+            if game.artwork.is_none()
+                && let Some(exe) = game.manual_exe.as_ref()
+            {
+                game.artwork = crate::artwork::extract_exe_icon(&self.paths.cache_dir, exe);
+            }
+        }
         games.sort_by_key(|a| a.name.to_lowercase());
         self.games = games;
 
@@ -459,7 +466,7 @@ impl VibranceGuiApp {
             PathBuf::from(self.manual_config.trim())
         };
         let icon = if self.manual_icon.trim().is_empty() {
-            None
+            crate::artwork::extract_exe_icon(&self.paths.cache_dir, &exe)
         } else {
             Some(PathBuf::from(self.manual_icon.trim()))
         };
@@ -640,8 +647,8 @@ impl VibranceGuiApp {
                 id,
                 crate::state::ManualGame {
                     name: stem,
+                    icon: crate::artwork::extract_exe_icon(&self.paths.cache_dir, &exe_path),
                     exe: exe_path,
-                    icon: None,
                     config_path: obs.config_path.clone().unwrap_or_else(|| {
                         self.paths
                             .vksumi_games_dir()

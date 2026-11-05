@@ -1,6 +1,6 @@
 [package]
 name = "vibrancegui-linux"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 rust-version = "1.95"
 description = "A lightweight VibranceGUI-style vkSumi profile manager for Linux"
@@ -32,6 +32,7 @@ ksni = { version = "0.3.7", default-features = false, features = ["blocking", "a
 ureq = "3"
 rfd = "0.17"
 dark-light = "3"
+icoextract_rs = "0.1"
 thiserror = "2"
 
 [profile.release]

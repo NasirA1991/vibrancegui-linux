@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.1.5 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.1.6 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -22,7 +22,7 @@ VibranceGUI for Linux v0.1.5 is a **vkSumi profile editor with Steam discovery a
 - **System light/dark theme detection** through the XDG desktop portal, with a Light theme toggle and `--light`/`--dark` overrides.
 - A global default vibrance slider that writes only `vibrance` to the global vkSumi config.
 - **All numeric vkSumi sliders** in the per-game Advanced section: saturation, temperature, contrast, brightness, gamma, exposure, hue, RGB gains, shadows/midtones/highlights, six hue bands, split toning, vignette, and daltonize strength/severity.
-- **Steam artwork icons**, downloaded on demand from Steam's CDN and cached in `~/.cache/vibrancegui/artwork`.
+- **Game icons**: Steam capsule/artwork from the local cache or Steam CDN; non-Steam and Steam-shortcut icons extracted directly from their Windows `.exe` resources and cached in `~/.cache/vibrancegui/icons`; manual icon override still works.
 - **Non-Steam games**: add any Linux/Proton executable manually, with an optional icon and config path, using a native file picker. Running processes are matched by executable name.
 - **Tracked programs**: the main grid shows the games you add (initially the Steam games with vkSumi enabled), not all 55 installed games.
 - **Autostart** checkbox writes an XDG autostart entry that starts the app hidden in the tray (`--hidden`).
