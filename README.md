@@ -2,6 +2,10 @@
 
 **Unofficial.** A lightweight, native Linux companion for [vkSumi](https://github.com/reakjra/vkSumi), inspired by the Windows [VibranceGUI](https://vibrancegui.com/). Not affiliated with the Windows project.
 
+- Source: <https://github.com/NasirA1991/vibrancegui-linux>
+- AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
+- Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/tag/v0.1.0>
+
 VibranceGUI for Linux v0.1 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
@@ -51,13 +55,15 @@ or use your preferred AUR helper.
 cargo build --release
 ```
 
-The binary is `target/release/vibrancegui`. A prebuilt binary from this checkout is also at `dist/vibrancegui`.
+The binary is `target/release/vibrancegui`.
 
 Run:
 
 ```bash
-./dist/vibrancegui
+./target/release/vibrancegui
 ```
+
+A prebuilt binary is available on the [GitHub release page](https://github.com/NasirA1991/vibrancegui-linux/releases/tag/v0.1.0).
 
 ## First-time use
 
@@ -110,6 +116,8 @@ Only the seven basic controls are exposed in this version; the profile file rema
 vibrancegui --doctor
 vibrancegui --doctor --observe
 ```
+
+If running from the build tree, use `target/release/vibrancegui --doctor`.
 
 `--doctor` prints the vkSumi manifest/library status, Steam root, account, installed games and their launch-option state. `--observe` also prints currently detected vkSumi-enabled processes, their AppIDs, executable names, layer-map state and effective config path.
 
