@@ -103,7 +103,51 @@ fn build_ui(app: &adw::Application) {
     let paths = AppPaths::discover().expect("home directory");
     let _ = paths.ensure();
     let steam = SteamData::discover();
-    let state = SavedState::load(&paths);
+    let mut state = SavedState::load(&paths);
+    for obs in process::scan(&paths).games {
+        if obs.appid.is_some() || obs.explicitly_disabled {
+            continue;
+        }
+        let Some(exe) = obs.exe_path.clone() else {
+            continue;
+        };
+        if state.manual_games.values().any(|m| m.exe == exe) {
+            continue;
+        }
+        let id = 0x8000_0000u32 | state.next_manual_id.max(1);
+        state.next_manual_id = state.next_manual_id.saturating_add(1).max(1);
+        let stem = exe
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("game")
+            .to_string();
+        state.manual_games.insert(
+            id,
+            state::ManualGame {
+                name: stem.clone(),
+                icon: artwork::extract_exe_icon(&paths.cache_dir, &exe),
+                exe,
+                config_path: obs
+                    .config_path
+                    .unwrap_or_else(|| paths.vksumi_games_dir().join(format!("{stem}.conf"))),
+            },
+        );
+    }
+    let _ = state.save(&paths);
+    let mut all_games = steam.games.clone();
+    for (id, m) in &state.manual_games {
+        all_games.push(steam::SteamGame {
+            appid: *id,
+            name: m.name.clone(),
+            install_dir: m.exe.parent().map(|p| p.to_path_buf()).unwrap_or_default(),
+            artwork: m.icon.clone(),
+            launch_options: String::new(),
+            manual: true,
+            manual_exe: Some(m.exe.clone()),
+            manual_config: Some(m.config_path.clone()),
+            shortcut: false,
+        });
+    }
 
     let window = gtk::ApplicationWindow::builder()
         .application(app)
@@ -241,6 +285,46 @@ fn build_ui(app: &adw::Application) {
     heading.set_xalign(0.0);
     heading.set_hexpand(true);
     heading_row.append(&heading);
+    let add_steam = gtk::Button::with_label("Add Steam game");
+    heading_row.append(&add_steam);
+    let steam_games = steam.games.clone();
+    let add_steam_paths = paths.clone();
+    let add_steam_window = window.clone();
+    add_steam.connect_clicked(move |_| {
+        let dialog = gtk::Window::builder()
+            .title("Add a Steam game")
+            .transient_for(&add_steam_window)
+            .modal(true)
+            .default_width(420)
+            .default_height(520)
+            .build();
+        let scroll = gtk::ScrolledWindow::builder().vexpand(true).build();
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let paths = add_steam_paths.clone();
+        let dialog_clone = dialog.clone();
+        let mut state = SavedState::load(&paths);
+        for game in &steam_games {
+            if state.tracked_steam.contains(&game.appid) {
+                continue;
+            }
+            let button = gtk::Button::with_label(&game.name);
+            button.set_has_frame(false);
+            let paths = paths.clone();
+            let dialog = dialog_clone.clone();
+            let appid = game.appid;
+            button.connect_clicked(move |_| {
+                let mut state = SavedState::load(&paths);
+                state.tracked_steam.insert(appid);
+                let _ = state.save(&paths);
+                dialog.close();
+                restart_app();
+            });
+            list.append(&button);
+        }
+        scroll.set_child(Some(&list));
+        dialog.set_child(Some(&scroll));
+        dialog.present();
+    });
     let add_manual = gtk::Button::with_label("Add manually");
     heading_row.append(&add_manual);
     let add_paths = paths.clone();
