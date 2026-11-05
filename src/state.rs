@@ -19,6 +19,8 @@ pub struct SavedState {
     pub next_manual_id: u32,
     #[serde(default)]
     pub tracking_initialized: bool,
+    #[serde(default)]
+    pub shortcuts_initialized: bool,
 }
 
 impl Default for SavedState {
@@ -30,6 +32,7 @@ impl Default for SavedState {
             manual_games: BTreeMap::new(),
             next_manual_id: 1,
             tracking_initialized: false,
+            shortcuts_initialized: false,
         }
     }
 }

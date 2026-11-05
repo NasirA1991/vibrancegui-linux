@@ -3,6 +3,7 @@ mod artwork;
 mod config_doc;
 mod paths;
 mod process;
+mod shortcuts;
 mod state;
 mod steam;
 mod theme;

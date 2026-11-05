@@ -239,16 +239,28 @@ impl VibranceGuiApp {
     }
 
     fn ensure_default_tracking(&mut self) {
-        if self.state.tracking_initialized {
-            return;
-        }
-        for game in &self.steam.games {
-            if game.vk_enabled() || self.state.games.contains_key(&game.appid) {
-                self.state.tracked_steam.insert(game.appid);
+        let mut changed = false;
+        if !self.state.shortcuts_initialized {
+            for game in &self.steam.games {
+                if game.shortcut {
+                    self.state.tracked_steam.insert(game.appid);
+                }
             }
+            self.state.shortcuts_initialized = true;
+            changed = true;
         }
-        self.state.tracking_initialized = true;
-        let _ = self.state.save(&self.paths);
+        if !self.state.tracking_initialized {
+            for game in &self.steam.games {
+                if game.vk_enabled() || self.state.games.contains_key(&game.appid) {
+                    self.state.tracked_steam.insert(game.appid);
+                }
+            }
+            self.state.tracking_initialized = true;
+            changed = true;
+        }
+        if changed {
+            let _ = self.state.save(&self.paths);
+        }
     }
 
     fn manual_to_game(id: u32, manual: &crate::state::ManualGame) -> SteamGame {
@@ -265,6 +277,7 @@ impl VibranceGuiApp {
             manual: true,
             manual_exe: Some(manual.exe.clone()),
             manual_config: Some(manual.config_path.clone()),
+            shortcut: false,
         }
     }
 
@@ -341,6 +354,15 @@ impl VibranceGuiApp {
         }
         if let Some(env) = game.config_env() {
             return Some(expand_user_path(&env.to_string_lossy(), &self.paths.home));
+        }
+        if game.shortcut
+            && let Some(exe) = game.manual_exe.as_ref().and_then(|p| p.file_name())
+        {
+            return Some(
+                self.paths
+                    .vksumi_games_dir()
+                    .join(format!("{}.conf", exe.to_string_lossy())),
+            );
         }
         self.observed_path(game.appid)
     }
@@ -588,6 +610,50 @@ impl VibranceGuiApp {
                     changed = true;
                 }
             }
+        }
+        // Any unknown process that was launched with ENABLE_VKSUMI=1 is useful
+        // evidence of a non-Steam game. Adopt it automatically; Add manually is
+        // now only a fallback for games that are not running and not Steam shortcuts.
+        let mut adopted = false;
+        for obs in &self.observed {
+            if obs.explicitly_disabled || obs.appid.is_some() {
+                continue;
+            }
+            let Some(exe_path) = obs.exe_path.clone() else {
+                continue;
+            };
+            let already = self.state.manual_games.values().any(|m| {
+                m.exe == exe_path
+                    || m.exe.file_name().and_then(|s| s.to_str()) == Some(obs.exe.as_str())
+            });
+            if already {
+                continue;
+            }
+            let stem = exe_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&obs.exe)
+                .to_string();
+            let id = 0x8000_0000u32 | self.state.next_manual_id.max(1);
+            self.state.next_manual_id = self.state.next_manual_id.saturating_add(1).max(1);
+            self.state.manual_games.insert(
+                id,
+                crate::state::ManualGame {
+                    name: stem,
+                    exe: exe_path,
+                    icon: None,
+                    config_path: obs.config_path.clone().unwrap_or_else(|| {
+                        self.paths
+                            .vksumi_games_dir()
+                            .join(format!("{}.conf", obs.exe))
+                    }),
+                },
+            );
+            adopted = true;
+        }
+        if adopted {
+            changed = true;
+            self.rebuild_games();
         }
         if changed {
             let _ = self.state.save(&self.paths);
@@ -1285,6 +1351,14 @@ impl VibranceGuiApp {
         let subtitle = if game.manual {
             format!(
                 "Non-Steam · {}",
+                game.manual_exe
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "unknown executable".into())
+            )
+        } else if game.shortcut {
+            format!(
+                "Steam shortcut · {}",
                 game.manual_exe
                     .as_ref()
                     .map(|p| p.display().to_string())

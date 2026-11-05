@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::shortcuts;
 use crate::vdf;
 
 #[derive(Debug, Clone)]
@@ -14,6 +15,7 @@ pub struct SteamGame {
     pub manual: bool,
     pub manual_exe: Option<PathBuf>,
     pub manual_config: Option<PathBuf>,
+    pub shortcut: bool,
 }
 
 impl SteamGame {
@@ -88,13 +90,11 @@ impl SteamData {
 
         if let Some(root) = &data.root {
             let launch_data = read_launch_options(root);
-            let map = launch_data
-                .as_ref()
-                .map(|(_, map)| map.clone())
-                .unwrap_or_default();
-            if let Some((account, _)) = launch_data {
-                data.account_id = Some(account);
-            }
+            let (account, map) = match launch_data {
+                Some((account, map)) => (Some(account), map),
+                None => (None, BTreeMap::new()),
+            };
+            data.account_id = account.clone();
 
             let mut games = Vec::new();
             let mut seen = std::collections::BTreeSet::new();
@@ -161,6 +161,34 @@ impl SteamData {
                         manual: false,
                         manual_exe: None,
                         manual_config: None,
+                        shortcut: false,
+                    });
+                }
+            }
+
+            if let Some(account) = &account {
+                for shortcut in read_shortcuts(root, account) {
+                    if !seen.insert(shortcut.appid) {
+                        continue;
+                    }
+                    let install_dir = shortcut
+                        .start_dir
+                        .clone()
+                        .or_else(|| shortcut.exe.parent().map(Path::to_path_buf))
+                        .unwrap_or_default();
+                    let artwork =
+                        shortcut_artwork(root, account, shortcut.appid, shortcut.icon.as_deref());
+                    let launch_options = map.get(&shortcut.appid).cloned().unwrap_or_default();
+                    games.push(SteamGame {
+                        appid: shortcut.appid,
+                        name: shortcut.name,
+                        install_dir,
+                        artwork,
+                        launch_options,
+                        manual: false,
+                        manual_exe: Some(shortcut.exe),
+                        manual_config: None,
+                        shortcut: true,
                     });
                 }
             }
@@ -238,6 +266,47 @@ fn count_manifests(steamapps: &Path) -> usize {
                 .count()
         })
         .unwrap_or(0)
+}
+
+fn read_shortcuts(root: &Path, account: &str) -> Vec<shortcuts::Shortcut> {
+    let path = root
+        .join("userdata")
+        .join(account)
+        .join("config/shortcuts.vdf");
+    shortcuts::parse_file(&path).unwrap_or_default()
+}
+
+fn shortcut_artwork(
+    root: &Path,
+    account: &str,
+    appid: u32,
+    icon: Option<&Path>,
+) -> Option<PathBuf> {
+    if let Some(icon) = icon
+        && icon.is_file()
+        && matches!(
+            icon.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                .as_deref(),
+            Some("png" | "jpg" | "jpeg" | "webp" | "ico")
+        )
+    {
+        return Some(icon.to_path_buf());
+    }
+    let grid = root.join("userdata").join(account).join("config/grid");
+    for name in [
+        format!("{appid}_hero.jpg"),
+        format!("{appid}p.jpg"),
+        format!("{appid}.jpg"),
+        format!("{appid}_logo.png"),
+    ] {
+        let path = grid.join(name);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
 }
 
 fn read_launch_options(root: &Path) -> Option<(String, BTreeMap<u32, String>)> {
@@ -351,6 +420,7 @@ mod tests {
             manual: false,
             manual_exe: None,
             manual_config: None,
+            shortcut: false,
         };
         assert_eq!(
             game.suggested_launch_options(),

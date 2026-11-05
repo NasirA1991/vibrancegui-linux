@@ -1,6 +1,6 @@
 [package]
 name = "vibrancegui-linux"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 rust-version = "1.95"
 description = "A lightweight VibranceGUI-style vkSumi profile manager for Linux"
@@ -22,7 +22,7 @@ eframe = { version = "0.37", default-features = false, features = [
     "system_fonts",
     "clipboard",
 ] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "ico"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 directories = "6"

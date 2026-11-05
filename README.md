@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.1.4 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.1.5 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -35,7 +35,7 @@ VibranceGUI for Linux v0.1.4 is a **vkSumi profile editor with Steam discovery a
 
 - No automatic Steam launch-option editing.
 - No Enable/Disable button. Removing `ENABLE_VKSUMI=1` from Steam is still the only true off switch.
-- No Heroic, Lutris, Faugus, or Flatpak Steam library import. Non-Steam games can be added manually.
+- No installed-game import from Heroic/Lutris/Bottles/Faugus or Flatpak Steam. Those games are auto-adopted once they run with vkSumi enabled; manual Add covers the rest.
 - No censor-box editor; daltonize mode is still config-file-only. Numeric daltonize sliders are exposed.
 - HDR/non-sRGB games may show no effect; OpenGL games do not work; anti-cheat may block Vulkan layers.
 
