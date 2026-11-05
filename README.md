@@ -4,9 +4,9 @@
 
 - Source: <https://github.com/NasirA1991/vibrancegui-linux>
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
-- Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/tag/v0.1.0>
+- Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.1 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.1.1 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -22,7 +22,8 @@ VibranceGUI for Linux v0.1 is a **vkSumi profile editor with Steam discovery and
 - Basic per-game controls (Vibrance, Saturation, Temperature, Contrast, Brightness, Gamma, Exposure).
 - Atomic profile writes and timestamped backups.
 - Never writes Steam configuration in this version.
-- Runs entirely on demand: process scanning stops when the window closes. No daemon, tray, or autostart.
+- Close-to-tray support (StatusNotifierItem). Closing the window hides it; use the tray menu to show, refresh, or quit. `--no-tray` disables this.
+- Runs on demand: process scanning stops when the process exits. No daemon or autostart.
 
 ## What does not work yet
 
@@ -31,6 +32,24 @@ VibranceGUI for Linux v0.1 is a **vkSumi profile editor with Steam discovery and
 - No Heroic, Lutris, Faugus, or Flatpak Steam support.
 - No censor-box editor or full advanced filter set.
 - HDR/non-sRGB games may show no effect; OpenGL games do not work; anti-cheat may block Vulkan layers.
+
+## vkSumi dependency
+
+The AUR package lists `vksumi` as an **optional** dependency, not a hard one. It does **not** install or download vkSumi automatically.
+
+This is deliberate:
+
+- If you already have vkSumi from AUR, Flatpak, or a manual build, installing another copy can create duplicate/conflicting Vulkan layers.
+- Installing a system Vulkan layer needs package-manager/root policy and the right architecture (64-bit vs 32-bit).
+- The app can still edit profiles without the layer; the game just will not be graded.
+
+At startup the app checks native and common Flatpak/manual layer locations. If it finds nothing, it shows a setup banner with:
+
+```bash
+paru -S vksumi
+```
+
+Install vkSumi through the method you prefer, make sure the layer is visible to the game, then click **Refresh** in the app. If the layer is only visible inside a Flatpak game runtime, the running-game detection and `/proc/<pid>/maps` check are the source of truth.
 
 ## Requirements
 
@@ -65,7 +84,7 @@ Run:
 ./target/release/vibrancegui
 ```
 
-A prebuilt binary is available on the [GitHub release page](https://github.com/NasirA1991/vibrancegui-linux/releases/tag/v0.1.0).
+A prebuilt binary is available on the [GitHub release page](https://github.com/NasirA1991/vibrancegui-linux/releases/latest).
 
 ## First-time use
 
@@ -89,6 +108,12 @@ A prebuilt binary is available on the [GitHub release page](https://github.com/N
 Once a game has been detected, the app remembers the config path, so you can edit it later even when the game is not running.
 
 The app never modifies Steam's files; if the launch option is missing, it shows a copyable line and asks you to add it once.
+
+## Tray behavior
+
+The app registers a StatusNotifierItem tray icon. Closing the window hides it to the tray; the tray menu has **Show**, **Refresh Steam library**, and **Quit**. `Ctrl+Q` quits. `vibrancegui --no-tray` disables close-to-tray.
+
+A StatusNotifierItem host is required. KDE Plasma works out of the box. GNOME needs an AppIndicator/StatusNotifier extension; if no tray host is available, the app falls back to normal close behavior.
 
 ## Why the launch option is still manual
 
@@ -149,9 +174,19 @@ cargo test
 
 The test suite covers VDF parsing, launch-option token handling, profile line editing, atomic save/backup behavior, and process-name normalization. Automated tests never touch real Steam files.
 
+## Release automation
+
+Tagged releases are built by GitHub Actions. The release workflow produces:
+
+- the native binary,
+- an AppImage,
+- checksums.
+
+The same workflow updates the AUR package from the tag archive. Required repository secrets are `AUR_USERNAME`, `AUR_EMAIL`, and `AUR_SSH_PRIVATE_KEY`. Flatpak is intentionally not shipped yet because the sandbox makes host Steam config, profile paths and Vulkan layer visibility a separate integration problem.
+
 ## Roadmap
 
-- **v0.2:** opt-in managed Steam launch-option writing, stable AppID profiles via `VKSUMI_CONFIG_FILE`, backups/rollback, drift detection.
+- **v0.2:** managed Steam launch-option writing, stable AppID profiles via `VKSUMI_CONFIG_FILE`, backups/rollback, drift detection.
 - Censor-box editor.
 - Full advanced filters.
 - More launchers only after their config formats are verified.

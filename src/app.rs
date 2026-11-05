@@ -15,6 +15,7 @@ use crate::paths::{AppPaths, expand_user_path};
 use crate::process::{self, Observation, ObservedGame};
 use crate::state::{GameMapping, SavedState};
 use crate::steam::{SteamData, SteamGame};
+use crate::tray::{self, TrayAction, VibranceTray};
 use crate::vksumi::VkSumiStatus;
 
 const ACCENT: Color32 = Color32::from_rgb(232, 153, 74);
@@ -40,6 +41,9 @@ pub struct VibranceGuiApp {
     scan_available: bool,
     observation_rx: Receiver<Observation>,
     observation_stop: Arc<AtomicBool>,
+    tray: Option<ksni::blocking::Handle<VibranceTray>>,
+    tray_rx: Receiver<TrayAction>,
+    quit_requested: bool,
     textures: HashMap<u32, TextureHandle>,
     texture_attempted: HashSet<u32>,
     status: StatusMessage,
@@ -94,7 +98,7 @@ struct GameEditor {
 }
 
 impl VibranceGuiApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, use_tray: bool) -> Self {
         let paths = AppPaths::discover().expect("home directory");
         let _ = paths.ensure();
         let layer = VkSumiStatus::detect(&paths);
@@ -117,6 +121,13 @@ impl VibranceGuiApp {
         if global_doc.path.as_os_str().is_empty() {
             global_doc.set_path(paths.global_vksumi_conf());
         }
+
+        let (tray_tx, tray_rx) = mpsc::channel();
+        let tray = if use_tray {
+            tray::spawn(cc.egui_ctx.clone(), tray_tx)
+        } else {
+            None
+        };
 
         let (tx, observation_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -162,6 +173,9 @@ impl VibranceGuiApp {
             scan_available: true,
             observation_rx,
             observation_stop: stop,
+            tray,
+            tray_rx,
+            quit_requested: false,
             textures: HashMap::new(),
             texture_attempted: HashSet::new(),
             status: initial_status,
@@ -387,19 +401,11 @@ impl VibranceGuiApp {
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Refresh").clicked() {
-                            self.steam = SteamData::discover();
-                            self.layer = VkSumiStatus::detect(&self.paths);
-                            self.textures.clear();
-                            self.texture_attempted.clear();
-                            self.status = StatusMessage::info("Steam library refreshed");
+                            self.refresh_library();
                         }
                         self.status_chip(
                             ui,
-                            if self.layer.usable {
-                                "vkSumi ready"
-                            } else {
-                                "vkSumi missing"
-                            },
+                            self.layer.status_text(),
                             if self.layer.usable { OK } else { WARN },
                         );
                         let account = self
@@ -420,6 +426,42 @@ impl VibranceGuiApp {
             .inner_margin(Margin::symmetric(9, 4))
             .show(ui, |ui| {
                 ui.label(RichText::new(text).size(11.0).color(color));
+            });
+    }
+
+    fn draw_missing_layer(&mut self, ui: &mut egui::Ui) {
+        Frame::new()
+            .fill(Color32::from_rgb(52, 43, 30))
+            .corner_radius(CornerRadius::same(9))
+            .inner_margin(Margin::same(12))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("vkSumi is not installed or could not be found.")
+                            .strong()
+                            .color(WARN),
+                    );
+                    if ui.small_button("Copy install command").clicked() {
+                        ui.ctx().copy_text("paru -S vksumi".to_string());
+                        self.status = StatusMessage::good(
+                            "Copied `paru -S vksumi` — or install the Flatpak runtime/manual layer",
+                        );
+                    }
+                });
+                ui.label(
+                    RichText::new(
+                        "The app can still edit profiles, but the game will not be graded until vkSumi is installed and ENABLE_VKSUMI=1 is set. If it is installed via Flatpak or manually, make sure the layer is visible to the game, then click Refresh.",
+                    )
+                    .size(10.0)
+                    .color(MUTED),
+                );
+                if !self.layer.problems.is_empty() {
+                    ui.label(
+                        RichText::new(&self.layer.problems[0])
+                            .size(9.0)
+                            .color(MUTED),
+                    );
+                }
             });
     }
 
@@ -979,7 +1021,50 @@ impl VibranceGuiApp {
     }
 }
 
+impl VibranceGuiApp {
+    fn refresh_library(&mut self) {
+        self.steam = SteamData::discover();
+        self.layer = VkSumiStatus::detect(&self.paths);
+        self.textures.clear();
+        self.texture_attempted.clear();
+        self.status = StatusMessage::info("Steam library refreshed");
+    }
+}
+
 impl eframe::App for VibranceGuiApp {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if ctx.input(|i| i.key_pressed(egui::Key::Q) && i.modifiers.command) {
+            self.quit_requested = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+
+        while let Ok(action) = self.tray_rx.try_recv() {
+            match action {
+                TrayAction::Show => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                }
+                TrayAction::Refresh => {
+                    self.refresh_library();
+                }
+                TrayAction::Quit => {
+                    self.quit_requested = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        }
+
+        if self.tray.is_some()
+            && !self.quit_requested
+            && ctx.input(|i| i.viewport().close_requested())
+        {
+            // Close button means "hide to tray", not "quit".
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.refresh_observation();
@@ -1015,6 +1100,10 @@ impl eframe::App for VibranceGuiApp {
             });
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(10.0);
+            if !self.layer.usable {
+                self.draw_missing_layer(ui);
+                ui.add_space(10.0);
+            }
             self.draw_default_card(ui);
             ui.add_space(12.0);
             self.draw_library(ui, &ctx);

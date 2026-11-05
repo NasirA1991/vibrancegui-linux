@@ -13,9 +13,8 @@ pub struct VkSumiStatus {
 
 impl VkSumiStatus {
     pub fn detect(paths: &AppPaths) -> Self {
-        let candidates = manifest_candidates(paths);
         let mut problems = Vec::new();
-        for manifest in candidates {
+        for manifest in manifest_candidates(paths) {
             if !manifest.is_file() {
                 continue;
             }
@@ -31,15 +30,40 @@ impl VkSumiStatus {
                 Err(err) => problems.push(format!("{}: {err}", manifest.display())),
             }
         }
+
+        // A Flatpak vkSumi extension or a manual/user-local install may not
+        // expose a host-visible manifest. Detecting the library still lets us
+        // explain the situation and lets the game process confirm the layer.
+        if let Some(library) = library_candidates(paths).into_iter().find(|p| p.is_file()) {
+            problems.push(format!(
+                "vkSumi library found at {} but no readable host manifest was found. \
+                 This is normal for some Flatpak/manual installs; the running game is the source of truth.",
+                library.display()
+            ));
+            return Self {
+                manifest: None,
+                library: Some(library),
+                usable: true,
+                problems,
+            };
+        }
+
+        if problems.is_empty() {
+            problems.push("vkSumi layer manifest and library not found.".into());
+        }
         Self {
             manifest: None,
             library: None,
             usable: false,
-            problems: if problems.is_empty() {
-                vec!["vkSumi layer manifest not found.".into()]
-            } else {
-                problems
-            },
+            problems,
+        }
+    }
+
+    pub fn status_text(&self) -> &'static str {
+        if self.usable {
+            "vkSumi detected"
+        } else {
+            "vkSumi not detected"
         }
     }
 }
@@ -61,7 +85,33 @@ fn manifest_candidates(paths: &AppPaths) -> Vec<PathBuf> {
         "/usr/share/vulkan/implicit_layer.d/vksumi.json",
     ));
     out.push(PathBuf::from("/etc/vulkan/implicit_layer.d/vksumi.json"));
+    out.push(PathBuf::from(
+        "/usr/lib/extensions/vulkan/vkSumi/share/vulkan/implicit_layer.d/vksumi.json",
+    ));
+    out.push(PathBuf::from(
+        "/app/share/vulkan/implicit_layer.d/vksumi.json",
+    ));
     out
+}
+
+fn library_candidates(paths: &AppPaths) -> Vec<PathBuf> {
+    vec![
+        paths.home.join(".local/lib/libVkLayer_vksumi.so"),
+        paths.home.join(".local/lib32/libVkLayer_vksumi.so"),
+        paths
+            .home
+            .join(".local/share/goverlay/layers/vksumi/libVkLayer_vksumi.so"),
+        PathBuf::from("/usr/lib/libVkLayer_vksumi.so"),
+        PathBuf::from("/usr/lib64/libVkLayer_vksumi.so"),
+        PathBuf::from("/usr/local/lib/libVkLayer_vksumi.so"),
+        PathBuf::from(
+            "/usr/lib/extensions/vulkan/vkSumi/lib/x86_64-linux-gnu/libVkLayer_vksumi.so",
+        ),
+        PathBuf::from("/usr/lib/extensions/vulkan/vkSumi/lib/i386-linux-gnu/libVkLayer_vksumi.so"),
+        PathBuf::from(
+            "/app/lib/extensions/vulkan/vkSumi/lib/x86_64-linux-gnu/libVkLayer_vksumi.so",
+        ),
+    ]
 }
 
 fn validate_manifest(path: &Path) -> Result<PathBuf> {

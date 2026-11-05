@@ -4,15 +4,18 @@ mod paths;
 mod process;
 mod state;
 mod steam;
+mod tray;
 mod vdf;
 mod vksumi;
 
 use eframe::egui;
 
 fn main() -> eframe::Result {
-    if std::env::args().any(|arg| arg == "--doctor") {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--doctor") {
         return doctor();
     }
+    let use_tray = !args.iter().any(|arg| arg == "--no-tray");
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -28,7 +31,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             configure_theme(&cc.egui_ctx);
-            Ok(Box::new(app::VibranceGuiApp::new(cc)))
+            Ok(Box::new(app::VibranceGuiApp::new(cc, use_tray)))
         }),
     )
 }
