@@ -236,9 +236,54 @@ fn build_ui(app: &adw::Application) {
     settings.set_child(Some(&settings_box));
     content.append(&settings);
 
+    let heading_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let heading = gtk::Label::new(Some("Program Settings"));
     heading.set_xalign(0.0);
-    content.append(&heading);
+    heading.set_hexpand(true);
+    heading_row.append(&heading);
+    let add_manual = gtk::Button::with_label("Add manually");
+    heading_row.append(&add_manual);
+    let add_paths = paths.clone();
+    let add_window = window.clone();
+    add_manual.connect_clicked(move |_| {
+        let dialog = gtk::FileChooserNative::new(
+            Some("Choose game executable"),
+            Some(&add_window),
+            gtk::FileChooserAction::Open,
+            Some("Open"),
+            Some("Cancel"),
+        );
+        let paths = add_paths.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response != gtk::ResponseType::Accept {
+                return;
+            }
+            let Some(exe) = dialog.file().and_then(|f| f.path()) else {
+                return;
+            };
+            let stem = exe
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("game")
+                .to_string();
+            let mut state = SavedState::load(&paths);
+            let id = 0x8000_0000u32 | state.next_manual_id.max(1);
+            state.next_manual_id = state.next_manual_id.saturating_add(1).max(1);
+            state.manual_games.insert(
+                id,
+                state::ManualGame {
+                    name: stem.clone(),
+                    icon: artwork::extract_exe_icon(&paths.cache_dir, &exe),
+                    config_path: paths.vksumi_games_dir().join(format!("{stem}.conf")),
+                    exe,
+                },
+            );
+            let _ = state.save(&paths);
+            restart_app();
+        });
+        dialog.show();
+    });
+    content.append(&heading_row);
     let flow = gtk::FlowBox::new();
     flow.set_max_children_per_line(4);
     flow.set_column_spacing(8);
@@ -356,7 +401,20 @@ fn build_detail_page(
     back.connect_clicked(move |_| {
         stack_clone.set_visible_child_name("games");
     });
-    page.append(&back);
+    let remove = gtk::Button::with_label("Remove");
+    let remove_paths = paths.clone();
+    let appid = game.appid;
+    remove.connect_clicked(move |_| {
+        let mut state = SavedState::load(&remove_paths);
+        state.tracked_steam.remove(&appid);
+        state.manual_games.remove(&appid);
+        let _ = state.save(&remove_paths);
+        restart_app();
+    });
+    let top = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    top.append(&back);
+    top.append(&remove);
+    page.append(&top);
     let title = gtk::Label::new(Some(&game.name));
     title.set_xalign(0.0);
     title.add_css_class("title-2");
@@ -447,4 +505,11 @@ fn build_detail_page(
     advanced.set_child(Some(&adv_box));
     page.append(&advanced);
     page.upcast()
+}
+
+fn restart_app() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).spawn();
+    }
+    std::process::exit(0);
 }
