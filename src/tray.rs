@@ -124,3 +124,66 @@ fn make_icon() -> Icon {
         data,
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum HeadlessTrayAction {
+    Show,
+    Quit,
+}
+
+pub struct HeadlessTray {
+    tx: Sender<HeadlessTrayAction>,
+}
+
+impl Tray for HeadlessTray {
+    const MENU_ON_ACTIVATE: bool = false;
+
+    fn id(&self) -> String {
+        "vibrancegui".to_string()
+    }
+
+    fn title(&self) -> String {
+        "VibranceGUI for Linux".to_string()
+    }
+
+    fn icon_name(&self) -> String {
+        "vibrancegui".to_string()
+    }
+
+    fn icon_pixmap(&self) -> Vec<Icon> {
+        vec![make_icon()]
+    }
+
+    fn activate(&mut self, _x: i32, _y: i32) {
+        let _ = self.tx.send(HeadlessTrayAction::Show);
+    }
+
+    fn menu(&self) -> Vec<MenuItem<Self>> {
+        vec![
+            StandardItem {
+                label: "Show VibranceGUI".to_string(),
+                icon_name: "window-new".to_string(),
+                activate: Box::new(|tray: &mut Self| {
+                    let _ = tray.tx.send(HeadlessTrayAction::Show);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            MenuItem::Separator,
+            StandardItem {
+                label: "Quit".to_string(),
+                icon_name: "application-exit".to_string(),
+                activate: Box::new(|tray: &mut Self| {
+                    let _ = tray.tx.send(HeadlessTrayAction::Quit);
+                }),
+                ..Default::default()
+            }
+            .into(),
+        ]
+    }
+}
+
+pub fn spawn_headless(tx: Sender<HeadlessTrayAction>) -> Option<Handle<HeadlessTray>> {
+    use ksni::blocking::TrayMethods;
+    HeadlessTray { tx }.spawn().ok()
+}

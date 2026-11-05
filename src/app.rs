@@ -48,6 +48,7 @@ pub struct VibranceGuiApp {
     tray: Option<ksni::blocking::Handle<VibranceTray>>,
     tray_rx: Receiver<TrayAction>,
     quit_requested: bool,
+    hide_pending: bool,
     palette: Palette,
     textures: HashMap<u32, TextureHandle>,
     texture_attempted: HashSet<u32>,
@@ -225,6 +226,7 @@ impl VibranceGuiApp {
             tray,
             tray_rx,
             quit_requested: false,
+            hide_pending: false,
             palette,
             textures: HashMap::new(),
             texture_attempted: HashSet::new(),
@@ -324,6 +326,19 @@ impl VibranceGuiApp {
                 }
             });
         self.about_open = open;
+    }
+
+    fn spawn_tray_helper(&self) -> bool {
+        let exe = std::env::var_os("APPIMAGE")
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_exe().ok());
+        let Some(exe) = exe else {
+            return false;
+        };
+        std::process::Command::new(exe)
+            .arg("--tray-only")
+            .spawn()
+            .is_ok()
     }
 
     fn ensure_default_tracking(&mut self) {
@@ -486,9 +501,9 @@ impl VibranceGuiApp {
                 .or_else(|| std::env::current_exe().ok())
                 .unwrap_or_else(|| PathBuf::from("vibrancegui"));
             let exec = if exe.to_string_lossy().contains(' ') {
-                format!("\"{}\" --hidden", exe.display())
+                format!("\"{}\" --tray-only", exe.display())
             } else {
-                format!("{} --hidden", exe.display())
+                format!("{} --tray-only", exe.display())
             };
             let desktop = format!(
                 "[Desktop Entry]\nType=Application\nName=VibranceGUI for Linux\nComment=Start VibranceGUI for Linux in the tray\nExec={exec}\nIcon=vibrancegui\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
@@ -1812,6 +1827,11 @@ impl VibranceGuiApp {
 
 impl eframe::App for VibranceGuiApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.hide_pending {
+            self.hide_pending = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            ctx.request_repaint();
+        }
         while let Ok((appid, path)) = self.artwork_rx.try_recv() {
             if let Some(path) = path {
                 self.artwork_paths.insert(appid, path);
@@ -1846,17 +1866,42 @@ impl eframe::App for VibranceGuiApp {
             && !self.quit_requested
             && ctx.input(|i| i.viewport().close_requested())
         {
-            // Close button means "hide to tray", not "quit".
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-            let _ = std::process::Command::new("notify-send")
-                .args([
-                    "-a",
-                    "VibranceGUI for Linux",
-                    "Still running in the tray",
-                    "Use the tray icon to reopen. Quit from the ☰ menu.",
-                ])
-                .spawn();
+            let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+            if wayland {
+                // winit cannot hide a Wayland window (`set_visible(false)` is a
+                // no-op there), so hand over to a tiny tray-only process and let
+                // this window close.
+                if self.spawn_tray_helper() {
+                    self.quit_requested = true;
+                    let _ = std::process::Command::new("notify-send")
+                        .args([
+                            "-a",
+                            "VibranceGUI for Linux",
+                            "Still running in the tray",
+                            "Use the tray icon to reopen. Quit from the ☰ menu.",
+                        ])
+                        .spawn();
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                    self.status = StatusMessage::warn(
+                        "Could not start the tray helper; leaving the window open.",
+                    );
+                }
+            } else {
+                // X11 supports hiding the window.
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.hide_pending = true;
+                ctx.request_repaint();
+                let _ = std::process::Command::new("notify-send")
+                    .args([
+                        "-a",
+                        "VibranceGUI for Linux",
+                        "Still running in the tray",
+                        "Use the tray icon to reopen. Quit from the ☰ menu.",
+                    ])
+                    .spawn();
+            }
         }
     }
 

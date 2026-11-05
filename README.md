@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.2.3 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.2.4 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -27,10 +27,10 @@ VibranceGUI for Linux v0.2.3 is a **vkSumi profile editor with Steam discovery a
 - **Game icons**: Steam capsule/artwork from the local cache or Steam CDN; non-Steam and Steam-shortcut icons extracted directly from their Windows `.exe` resources and cached in `~/.cache/vibrancegui/icons`; manual icon override still works.
 - **Non-Steam games**: add any Linux/Proton executable manually, with an optional icon and config path, using a native file picker. Running processes are matched by executable name.
 - **Enabled-first game list**: normal Steam games are only shown when `ENABLE_VKSUMI=1` is present in their launch options (or they are currently running with vkSumi). Steam shortcuts and manually added/auto-detected non-Steam games remain visible. A **?** next to Program Settings explains how to enable a hidden game.
-- **Autostart** checkbox writes an XDG autostart entry that starts the app hidden in the tray (`--hidden`).
+- **Autostart** checkbox writes an XDG autostart entry that starts a tray-only helper (`--tray-only`).
 - Atomic profile writes and timestamped backups.
 - Never writes Steam configuration in this version.
-- Close-to-tray support (StatusNotifierItem). Closing the window hides it; use the tray menu to show, refresh, or quit. `--no-tray` disables this.
+- Close-to-tray support (StatusNotifierItem). On X11 the window hides; on Wayland, where winit cannot hide a window, the app hands over to a tiny tray-only process and the window closes. Use the tray menu to show or quit. `--no-tray` disables this.
 - Runs on demand: process scanning stops when the process exits.
 
 ## What does not work yet

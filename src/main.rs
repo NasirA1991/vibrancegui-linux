@@ -18,6 +18,9 @@ fn main() -> eframe::Result {
     if args.iter().any(|arg| arg == "--doctor") {
         return doctor();
     }
+    if args.iter().any(|arg| arg == "--tray-only") {
+        return tray_only();
+    }
     let use_tray = !args.iter().any(|arg| arg == "--no-tray");
     let start_hidden = args.iter().any(|arg| arg == "--hidden");
 
@@ -53,6 +56,24 @@ fn main() -> eframe::Result {
             )))
         }),
     )
+}
+
+fn tray_only() -> eframe::Result {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let _tray = tray::spawn_headless(tx);
+    if _tray.is_none() {
+        eprintln!("Could not create tray icon");
+        return Ok(());
+    }
+    if let Ok(tray::HeadlessTrayAction::Show) = rx.recv() {
+        let exe = std::env::var_os("APPIMAGE")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::current_exe().ok());
+        if let Some(exe) = exe {
+            let _ = std::process::Command::new(exe).spawn();
+        }
+    }
+    Ok(())
 }
 
 fn doctor() -> eframe::Result {
