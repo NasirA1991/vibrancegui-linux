@@ -35,6 +35,8 @@ pub struct VibranceGuiApp {
     manual_icon: String,
     manual_config: String,
     autostart: bool,
+    theme_mode: String,
+    about_open: bool,
     global_doc: ConfigDoc,
     global_dirty: bool,
     global_last_change: Instant,
@@ -109,13 +111,21 @@ impl VibranceGuiApp {
         cc: &eframe::CreationContext<'_>,
         use_tray: bool,
         start_hidden: bool,
-        palette: Palette,
+        mut palette: Palette,
     ) -> Self {
         let paths = AppPaths::discover().expect("home directory");
         let _ = paths.ensure();
         let layer = VkSumiStatus::detect(&paths);
         let steam = SteamData::discover();
         let state = SavedState::load(&paths);
+        let theme_mode = state.theme.clone();
+        palette = match theme_mode.as_str() {
+            "light" => crate::theme::LIGHT,
+            "dark" => crate::theme::DARK,
+            _ => palette,
+        };
+        crate::theme::apply(&cc.egui_ctx, &palette);
+        let about_open = false;
 
         let global_path = paths.global_vksumi_conf();
         let mut global_doc = ConfigDoc::load(&global_path)
@@ -202,6 +212,8 @@ impl VibranceGuiApp {
             manual_icon: String::new(),
             manual_config: String::new(),
             autostart: false,
+            theme_mode,
+            about_open,
             global_doc,
             global_dirty: false,
             global_last_change: Instant::now(),
@@ -236,6 +248,47 @@ impl VibranceGuiApp {
         }
         app.refresh_observation();
         app
+    }
+
+    fn set_theme(&mut self, mode: &str, ctx: &egui::Context) {
+        self.theme_mode = mode.to_string();
+        self.state.theme = mode.to_string();
+        let _ = self.state.save(&self.paths);
+        self.palette = match mode {
+            "light" => theme::LIGHT,
+            "dark" => theme::DARK,
+            _ => theme::detect(),
+        };
+        theme::apply(ctx, &self.palette);
+        ctx.request_repaint();
+    }
+
+    fn open_url(url: &str) {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
+
+    fn draw_about(&mut self, ctx: &egui::Context) {
+        let mut open = self.about_open;
+        egui::Window::new("About")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(360.0)
+            .show(ctx, |ui| {
+                ui.heading("VibranceGUI for Linux");
+                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.add_space(6.0);
+                ui.label("Unofficial vkSumi profile manager for Steam and non-Steam games.");
+                ui.label("Not affiliated with the Windows VibranceGUI project.");
+                ui.add_space(6.0);
+                if ui.link("GitHub repository").clicked() {
+                    Self::open_url("https://github.com/NasirA1991/vibrancegui-linux");
+                }
+                if ui.link("Report an issue").clicked() {
+                    Self::open_url("https://github.com/NasirA1991/vibrancegui-linux/issues");
+                }
+            });
+        self.about_open = open;
     }
 
     fn ensure_default_tracking(&mut self) {
@@ -782,6 +835,24 @@ impl VibranceGuiApp {
                             .color(self.palette.muted),
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.menu_button("☰", |ui| {
+                            ui.label(RichText::new("Theme").strong());
+                            for (label, mode) in [
+                                ("System default", "auto"),
+                                ("Dark", "dark"),
+                                ("Light", "light"),
+                            ] {
+                                if ui.radio(self.theme_mode == mode, label).clicked() {
+                                    self.set_theme(mode, ui.ctx());
+                                    ui.close();
+                                }
+                            }
+                            ui.separator();
+                            if ui.button("About VibranceGUI").clicked() {
+                                self.about_open = true;
+                                ui.close();
+                            }
+                        });
                         if ui.button("Refresh").clicked() {
                             self.refresh_library();
                         }
@@ -866,11 +937,6 @@ impl VibranceGuiApp {
                 {
                     self.set_autostart(autostart);
                 }
-                let mut light = !self.palette.dark;
-                if ui.checkbox(&mut light, "Light theme").changed() {
-                    self.palette = if light { theme::LIGHT } else { theme::DARK };
-                    theme::apply(ui.ctx(), &self.palette);
-                }
                 let mut value = self.global_value("vibrance").clamp(0.0, 1.0);
                 ui.horizontal(|ui| {
                     ui.label(
@@ -892,14 +958,19 @@ impl VibranceGuiApp {
                     self.global_last_change = Instant::now();
                     ui.ctx().request_repaint();
                 }
-                ui.label(
-                    RichText::new(format!(
-                        "Writes only `vibrance` to {}",
-                        self.paths.global_vksumi_conf().display()
-                    ))
-                    .size(10.0)
-                    .color(self.palette.muted),
-                );
+                ui.collapsing("Configuration", |ui| {
+                    ui.label(
+                        RichText::new("Global vkSumi configuration")
+                            .size(10.0)
+                            .color(self.palette.muted),
+                    );
+                    ui.label(
+                        RichText::new(self.paths.global_vksumi_conf().display().to_string())
+                            .monospace()
+                            .size(9.0)
+                            .color(self.palette.muted),
+                    );
+                });
             });
     }
 
@@ -912,19 +983,15 @@ impl VibranceGuiApp {
         ui.horizontal(|ui| {
             ui.label(RichText::new("●").color(color).size(10.0));
             ui.label(RichText::new(&self.status.text).size(11.0).color(color));
-            if let Some(account) = &self.steam.account_id {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.label(
-                        RichText::new(format!("account {account}"))
-                            .size(10.0)
-                            .color(self.palette.muted),
-                    );
-                });
-            }
         });
     }
 
+    fn game_visible(&self, game: &SteamGame) -> bool {
+        game.manual || game.shortcut || game.vk_enabled() || self.running_for(game.appid).is_some()
+    }
+
     fn draw_library(&mut self, ui: &mut egui::Ui) {
+        let visible_count = self.games.iter().filter(|g| self.game_visible(g)).count();
         let enabled_count = self
             .games
             .iter()
@@ -936,6 +1003,10 @@ impl VibranceGuiApp {
                     .strong()
                     .color(self.palette.text),
             );
+            ui.label(RichText::new("?").strong().color(self.palette.accent))
+                .on_hover_text(
+                    "Only Steam games with ENABLE_VKSUMI=1 in Launch Options (or currently running with vkSumi) are shown. Non-Steam shortcuts and manual/detected games are always shown. To add a hidden Steam game: Steam → Properties → Launch Options → ENABLE_VKSUMI=1 %command%, then Refresh.",
+                );
             ui.add_space(6.0);
             if ui.button("Add").clicked() {
                 self.add_steam_open = true;
@@ -964,7 +1035,7 @@ impl VibranceGuiApp {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!(
-                    "{} tracked · {} enabled",
+                    "{} tracked · {visible_count} shown · {} enabled",
                     self.games.len(),
                     enabled_count
                 ))
@@ -987,6 +1058,7 @@ impl VibranceGuiApp {
             .games
             .iter()
             .enumerate()
+            .filter(|(_, g)| self.game_visible(g))
             .filter(|(_, g)| needle.is_empty() || g.name.to_lowercase().contains(&needle))
             .map(|(i, _)| i)
             .collect();
@@ -1011,7 +1083,7 @@ impl VibranceGuiApp {
                 ui.label(RichText::new("No programs yet").color(self.palette.muted));
                 ui.label(
                     RichText::new(
-                        "Use Add for a Steam game or Add manually for another executable.",
+                        "Only games with ENABLE_VKSUMI=1 appear here. Add one in Steam's Launch Options, then Refresh. Non-Steam games can be added manually.",
                     )
                     .size(11.0)
                     .color(self.palette.muted),
@@ -1044,6 +1116,7 @@ impl VibranceGuiApp {
         if response.clicked() {
             self.set_selected(game.appid);
         }
+        let response = response.on_hover_text(&game.name);
         let hover = response.hovered();
         let painter = ui.painter_at(rect);
         let bg = if selected {
@@ -1174,33 +1247,6 @@ impl VibranceGuiApp {
         );
         self.textures.insert(game.appid, texture.clone());
         Some(texture)
-    }
-
-    fn draw_game_window(&mut self, ctx: &egui::Context) {
-        let Some(appid) = self.selected else {
-            return;
-        };
-        let Some(game) = self.game(appid).cloned() else {
-            return;
-        };
-        let mut open = true;
-        egui::Window::new(format!("{} — settings", game.name))
-            .open(&mut open)
-            .default_width(430.0)
-            .min_width(360.0)
-            .max_height(640.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        self.draw_detail(ui);
-                    });
-            });
-        if !open {
-            self.selected = None;
-            self.editor = None;
-        }
     }
 
     fn draw_add_steam_window(&mut self, ctx: &egui::Context) {
@@ -1785,20 +1831,30 @@ impl eframe::App for VibranceGuiApp {
             self.draw_bottom_status(ui);
         });
         egui::CentralPanel::default().show(ui, |ui| {
-            ui.add_space(8.0);
-            if !self.layer.usable {
-                self.draw_missing_layer(ui);
+            if self.selected.is_some() {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.add_space(8.0);
+                        self.draw_detail(ui);
+                        ui.add_space(8.0);
+                    });
+            } else {
                 ui.add_space(8.0);
+                if !self.layer.usable {
+                    self.draw_missing_layer(ui);
+                    ui.add_space(8.0);
+                }
+                self.draw_default_card(ui);
+                ui.add_space(10.0);
+                self.draw_library(ui);
+                ui.add_space(6.0);
             }
-            self.draw_default_card(ui);
-            ui.add_space(10.0);
-            self.draw_library(ui);
-            ui.add_space(6.0);
         });
 
-        self.draw_game_window(&ctx);
         self.draw_add_steam_window(&ctx);
         self.draw_add_manual_window(&ctx);
+        self.draw_about(&ctx);
 
         self.save_global_if_due();
         self.save_editor_if_due();

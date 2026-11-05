@@ -21,6 +21,12 @@ pub struct SavedState {
     pub tracking_initialized: bool,
     #[serde(default)]
     pub shortcuts_initialized: bool,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+}
+
+fn default_theme() -> String {
+    "auto".to_string()
 }
 
 impl Default for SavedState {
@@ -33,6 +39,7 @@ impl Default for SavedState {
             next_manual_id: 1,
             tracking_initialized: false,
             shortcuts_initialized: false,
+            theme: default_theme(),
         }
     }
 }

@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.1.6 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.1.7 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -19,12 +19,14 @@ VibranceGUI for Linux v0.1.6 is a **vkSumi profile editor with Steam discovery a
   - otherwise vkSumi's per-executable `~/.config/vkSumi/games/<exe>.conf`.
 - Edits the profile live; vkSumi hot-reloads it.
 - A compact **VibranceGUI-style window**: Settings card, default vibrance, Program Settings with icons, Add / Add manually / Remove.
-- **System light/dark theme detection** through the XDG desktop portal, with a Light theme toggle and `--light`/`--dark` overrides.
+- Game settings open **inline in the main window**, with a back button — no child window trapped inside the app.
+- **About** under ☰ with version, GitHub, and issue links.
+- **Theme menu** under ☰: **System default**, **Dark**, or **Light**, persisted across launches. `--light`/`--dark` still override for a session.
 - A global default vibrance slider that writes only `vibrance` to the global vkSumi config.
 - **All numeric vkSumi sliders** in the per-game Advanced section: saturation, temperature, contrast, brightness, gamma, exposure, hue, RGB gains, shadows/midtones/highlights, six hue bands, split toning, vignette, and daltonize strength/severity.
 - **Game icons**: Steam capsule/artwork from the local cache or Steam CDN; non-Steam and Steam-shortcut icons extracted directly from their Windows `.exe` resources and cached in `~/.cache/vibrancegui/icons`; manual icon override still works.
 - **Non-Steam games**: add any Linux/Proton executable manually, with an optional icon and config path, using a native file picker. Running processes are matched by executable name.
-- **Tracked programs**: the main grid shows the games you add (initially the Steam games with vkSumi enabled), not all 55 installed games.
+- **Enabled-first game list**: normal Steam games are only shown when `ENABLE_VKSUMI=1` is present in their launch options (or they are currently running with vkSumi). Steam shortcuts and manually added/auto-detected non-Steam games remain visible. A **?** next to Program Settings explains how to enable a hidden game.
 - **Autostart** checkbox writes an XDG autostart entry that starts the app hidden in the tray (`--hidden`).
 - Atomic profile writes and timestamped backups.
 - Never writes Steam configuration in this version.
@@ -107,7 +109,7 @@ A prebuilt binary is available on the [GitHub release page](https://github.com/N
 
 The UI is **egui/eframe**, not GTK. It is a native Rust window with a custom theme; no web view and no GTK dependency. The layout intentionally mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open in a compact window with Basic and Advanced sliders.
 
-The app follows the system light/dark preference at startup through the XDG desktop portal. You can override it with the **Light theme** checkbox in Settings or with `--light` / `--dark`. The toggle is session-only; the next launch follows the system again unless flagged.
+The theme is under the **☰** menu: **System default**, **Dark**, or **Light**. The choice is saved in the app state. `--light` / `--dark` can still force a session theme. The **About** dialog there shows the version and repository link.
 
 If you add a non-Steam game, use **Add manually**, enter the executable path, optionally an icon and a `VKSUMI_CONFIG_FILE` path, then launch the game with `ENABLE_VKSUMI=1`. The app matches the running executable by name and links its config.
 
