@@ -18,9 +18,7 @@ Branch: `gtk4`
 - [x] Startup+runtime process adoption (restarts UI to refresh)
 - [x] Refresh/Reload actions (restart UI to reload state/config)
 - [ ] AUR packaging switched to GTK dependencies
-- [ ] Final parity verification on a real desktop session
+- [~] Real desktop-session tray/Wayland verification
 - [ ] Replace main/AUR binary after verification
 
-Known limitations:
-- UI refresh after process adoption/config reload currently restarts the app.
-- Runtime testing has been under Xvfb; tray/portal behavior on Wayland needs a real session check.
+Live updates now refresh the GTK grid and detail page without restarting for add/remove/process adoption/config reload. Artwork completion still triggers a refresh/restart path. Runtime testing has been under Xvfb; tray/portal behavior on Wayland needs a real session check.

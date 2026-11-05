@@ -310,6 +310,11 @@ fn build_ui(app: &adw::Application) {
     settings.set_child(Some(&settings_box));
     content.append(&settings);
 
+    let flow = gtk::FlowBox::new();
+    flow.set_max_children_per_line(4);
+    flow.set_column_spacing(8);
+    flow.set_row_spacing(8);
+    flow.set_homogeneous(true);
     let heading_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let heading = gtk::Label::new(Some("Program Settings"));
     heading.set_xalign(0.0);
@@ -320,6 +325,9 @@ fn build_ui(app: &adw::Application) {
     let steam_games = steam.games.clone();
     let add_steam_paths = paths.clone();
     let add_steam_window = window.clone();
+    let add_steam_flow = flow.clone();
+    let add_steam_stack = stack.clone();
+    let add_steam_data = steam.clone();
     add_steam.connect_clicked(move |_| {
         let dialog = gtk::Window::builder()
             .title("Add a Steam game")
@@ -342,12 +350,20 @@ fn build_ui(app: &adw::Application) {
             let paths = paths.clone();
             let dialog = dialog_clone.clone();
             let appid = game.appid;
+            let flow_for_button = add_steam_flow.clone();
+            let stack_for_button = add_steam_stack.clone();
+            let data_for_button = add_steam_data.clone();
             button.connect_clicked(move |_| {
                 let mut state = SavedState::load(&paths);
                 state.tracked_steam.insert(appid);
                 let _ = state.save(&paths);
                 dialog.close();
-                restart_app();
+                populate_flow(
+                    &flow_for_button,
+                    &paths,
+                    &data_for_button,
+                    &stack_for_button,
+                );
             });
             list.append(&button);
         }
@@ -359,6 +375,9 @@ fn build_ui(app: &adw::Application) {
     heading_row.append(&add_manual);
     let add_paths = paths.clone();
     let add_window = window.clone();
+    let add_flow = flow.clone();
+    let add_stack = stack.clone();
+    let add_steam_data = steam.clone();
     add_manual.connect_clicked(move |_| {
         let dialog = gtk::FileChooserNative::new(
             Some("Choose game executable"),
@@ -368,6 +387,9 @@ fn build_ui(app: &adw::Application) {
             Some("Cancel"),
         );
         let paths = add_paths.clone();
+        let flow_for_dialog = add_flow.clone();
+        let stack_for_dialog = add_stack.clone();
+        let data_for_dialog = add_steam_data.clone();
         dialog.connect_response(move |dialog, response| {
             if response != gtk::ResponseType::Accept {
                 return;
@@ -393,75 +415,23 @@ fn build_ui(app: &adw::Application) {
                 },
             );
             let _ = state.save(&paths);
-            restart_app();
+            populate_flow(
+                &flow_for_dialog,
+                &paths,
+                &data_for_dialog,
+                &stack_for_dialog,
+            );
         });
         dialog.show();
     });
     content.append(&heading_row);
-    let flow = gtk::FlowBox::new();
-    flow.set_max_children_per_line(4);
-    flow.set_column_spacing(8);
-    flow.set_row_spacing(8);
-    flow.set_homogeneous(true);
-    let games = all_games
-        .iter()
-        .filter(|g| g.vk_enabled() || g.shortcut || g.manual);
-    for game in games {
-        let b = gtk::Button::new();
-        b.add_css_class("flat");
-        b.add_css_class("card");
-        b.set_tooltip_text(Some(&game.name));
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        card.set_margin_top(6);
-        card.set_margin_bottom(6);
-        card.set_margin_start(6);
-        card.set_margin_end(6);
-        let icon_path = game
-            .artwork
-            .clone()
-            .filter(|p| p.is_file())
-            .or_else(|| {
-                let cached = artwork::cache_path(&paths.cache_dir, game.appid);
-                cached.is_file().then_some(cached)
-            })
-            .or_else(|| {
-                game.manual_exe
-                    .as_ref()
-                    .and_then(|exe| artwork::extract_exe_icon(&paths.cache_dir, exe))
-            });
-        let image = if let Some(p) = icon_path.as_ref() {
-            gtk::Image::from_file(p)
-        } else {
-            gtk::Image::from_icon_name("application-x-executable")
-        };
-        image.set_pixel_size(64);
-        card.append(&image);
-        let name = gtk::Label::new(Some(&game.name));
-        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        name.set_max_width_chars(16);
-        name.set_xalign(0.0);
-        card.append(&name);
-        b.set_child(Some(&card));
-        let stack_clone = stack.clone();
-        let paths_clone = paths.clone();
-        let state_clone = state.clone();
-        let game_clone = game.clone();
-        b.connect_clicked(move |_| {
-            let detail = build_detail_page(&paths_clone, &state_clone, &game_clone, &stack_clone);
-            if let Some(old) = stack_clone.child_by_name("detail") {
-                stack_clone.remove(&old);
-            }
-            stack_clone.add_named(&detail, Some("detail"));
-            stack_clone.set_visible_child_name("detail");
-        });
-        flow.insert(&b, -1);
-    }
     let scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
         .build();
     scroll.set_child(Some(&flow));
     content.append(&scroll);
+    populate_flow(&flow, &paths, &steam, &stack);
 
     let status = gtk::Label::new(Some(&format!(
         "vkSumi detected · {} tracked · {} installed",
@@ -491,6 +461,9 @@ fn build_ui(app: &adw::Application) {
     });
 
     let detect_paths = paths.clone();
+    let detect_flow = flow.clone();
+    let detect_stack = stack.clone();
+    let detect_steam = steam.clone();
     gtk::glib::timeout_add_seconds_local(3, move || {
         let mut state = SavedState::load(&detect_paths);
         let mut adopted = false;
@@ -526,7 +499,7 @@ fn build_ui(app: &adw::Application) {
         }
         if adopted {
             let _ = state.save(&detect_paths);
-            restart_app();
+            populate_flow(&detect_flow, &detect_paths, &detect_steam, &detect_stack);
         }
         gtk::glib::ControlFlow::Continue
     });
@@ -552,6 +525,8 @@ fn build_detail_page(
     state: &SavedState,
     game: &steam::SteamGame,
     stack: &gtk::Stack,
+    flow: &gtk::FlowBox,
+    steam: &SteamData,
 ) -> gtk::Widget {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 10);
     page.set_margin_top(12);
@@ -564,16 +539,40 @@ fn build_detail_page(
         stack_clone.set_visible_child_name("games");
     });
     let reload = gtk::Button::with_label("Reload");
-    reload.connect_clicked(|_| restart_app());
+    let reload_paths = paths.clone();
+    let reload_stack = stack.clone();
+    let reload_flow = flow.clone();
+    let reload_steam = steam.clone();
+    let reload_game = game.clone();
+    reload.connect_clicked(move |_| {
+        let state = SavedState::load(&reload_paths);
+        let page = build_detail_page(
+            &reload_paths,
+            &state,
+            &reload_game,
+            &reload_stack,
+            &reload_flow,
+            &reload_steam,
+        );
+        if let Some(old) = reload_stack.child_by_name("detail") {
+            reload_stack.remove(&old);
+        }
+        reload_stack.add_named(&page, Some("detail"));
+        reload_stack.set_visible_child_name("detail");
+    });
     let remove = gtk::Button::with_label("Remove");
     let remove_paths = paths.clone();
+    let remove_flow = flow.clone();
+    let remove_stack = stack.clone();
+    let remove_steam = steam.clone();
     let appid = game.appid;
     remove.connect_clicked(move |_| {
         let mut state = SavedState::load(&remove_paths);
         state.tracked_steam.remove(&appid);
         state.manual_games.remove(&appid);
         let _ = state.save(&remove_paths);
-        restart_app();
+        populate_flow(&remove_flow, &remove_paths, &remove_steam, &remove_stack);
+        remove_stack.set_visible_child_name("games");
     });
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     top.append(&back);
@@ -677,4 +676,91 @@ fn restart_app() {
         let _ = std::process::Command::new(exe).spawn();
     }
     std::process::exit(0);
+}
+
+fn all_ui_games(steam: &SteamData, state: &SavedState) -> Vec<steam::SteamGame> {
+    let mut all = steam.games.clone();
+    for (id, m) in &state.manual_games {
+        all.push(steam::SteamGame {
+            appid: *id,
+            name: m.name.clone(),
+            install_dir: m.exe.parent().map(|p| p.to_path_buf()).unwrap_or_default(),
+            artwork: m.icon.clone(),
+            launch_options: String::new(),
+            manual: true,
+            manual_exe: Some(m.exe.clone()),
+            manual_config: Some(m.config_path.clone()),
+            shortcut: false,
+        });
+    }
+    all
+}
+
+fn populate_flow(flow: &gtk::FlowBox, paths: &AppPaths, steam: &SteamData, stack: &gtk::Stack) {
+    while let Some(child) = flow.first_child() {
+        flow.remove(&child);
+    }
+    let state = SavedState::load(paths);
+    for game in all_ui_games(steam, &state)
+        .into_iter()
+        .filter(|g| g.vk_enabled() || g.shortcut || g.manual)
+    {
+        let b = gtk::Button::new();
+        b.add_css_class("flat");
+        b.add_css_class("card");
+        b.set_tooltip_text(Some(&game.name));
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        card.set_margin_top(6);
+        card.set_margin_bottom(6);
+        card.set_margin_start(6);
+        card.set_margin_end(6);
+        let icon_path = game
+            .artwork
+            .clone()
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                let cached = artwork::cache_path(&paths.cache_dir, game.appid);
+                cached.is_file().then_some(cached)
+            })
+            .or_else(|| {
+                game.manual_exe
+                    .as_ref()
+                    .and_then(|exe| artwork::extract_exe_icon(&paths.cache_dir, exe))
+            });
+        let image = if let Some(p) = icon_path.as_ref() {
+            gtk::Image::from_file(p)
+        } else {
+            gtk::Image::from_icon_name("application-x-executable")
+        };
+        image.set_pixel_size(64);
+        card.append(&image);
+        let name = gtk::Label::new(Some(&game.name));
+        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        name.set_max_width_chars(16);
+        name.set_xalign(0.0);
+        card.append(&name);
+        b.set_child(Some(&card));
+        let stack_clone = stack.clone();
+        let paths_clone = paths.clone();
+        let state_clone = state.clone();
+        let game_clone = game.clone();
+        let flow_clone = flow.clone();
+        let steam_clone = steam.clone();
+        b.connect_clicked(move |_| {
+            let detail = build_detail_page(
+                &paths_clone,
+                &state_clone,
+                &game_clone,
+                &stack_clone,
+                &flow_clone,
+                &steam_clone,
+            );
+            if let Some(old) = stack_clone.child_by_name("detail") {
+                stack_clone.remove(&old);
+            }
+            stack_clone.add_named(&detail, Some("detail"));
+            stack_clone.set_visible_child_name("detail");
+        });
+        flow.insert(&b, -1);
+    }
 }
