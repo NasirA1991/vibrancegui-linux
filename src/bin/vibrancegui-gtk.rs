@@ -403,8 +403,7 @@ fn build_ui(app: &adw::Application) {
     flow.set_column_spacing(8);
     flow.set_row_spacing(8);
     flow.set_homogeneous(true);
-    let games = steam
-        .games
+    let games = all_games
         .iter()
         .filter(|g| g.vk_enabled() || g.shortcut || g.manual);
     for game in games {
