@@ -136,6 +136,19 @@ fn backup(paths: &AppPaths, path: &Path) -> Result<()> {
     if !dest.exists() {
         let _ = fs::copy(path, dest);
     }
+    // Keep the backup directory bounded; oldest files are removed first.
+    if let Ok(entries) = fs::read_dir(&paths.backups_dir) {
+        let mut backups: Vec<_> = entries
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".bak"))
+            .collect();
+        if backups.len() > 20 {
+            backups.sort_by_key(|e| e.file_name());
+            for entry in backups.iter().take(backups.len() - 20) {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
     Ok(())
 }
 

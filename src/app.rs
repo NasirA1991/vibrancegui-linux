@@ -49,6 +49,8 @@ pub struct VibranceGuiApp {
     tray_rx: Receiver<TrayAction>,
     quit_requested: bool,
     hide_pending: bool,
+    show_all_steam: bool,
+    tray_hint_shown: bool,
     palette: Palette,
     textures: HashMap<u32, TextureHandle>,
     texture_attempted: HashSet<u32>,
@@ -227,6 +229,8 @@ impl VibranceGuiApp {
             tray_rx,
             quit_requested: false,
             hide_pending: false,
+            show_all_steam: false,
+            tray_hint_shown: false,
             palette,
             textures: HashMap::new(),
             texture_attempted: HashSet::new(),
@@ -1018,7 +1022,11 @@ impl VibranceGuiApp {
     }
 
     fn game_visible(&self, game: &SteamGame) -> bool {
-        game.manual || game.shortcut || game.vk_enabled() || self.running_for(game.appid).is_some()
+        self.show_all_steam
+            || game.manual
+            || game.shortcut
+            || game.vk_enabled()
+            || self.running_for(game.appid).is_some()
     }
 
     fn draw_library(&mut self, ui: &mut egui::Ui) {
@@ -1036,8 +1044,18 @@ impl VibranceGuiApp {
             );
             ui.label(RichText::new("?").strong().color(self.palette.accent))
                 .on_hover_text(
-                    "Only games with ENABLE_VKSUMI=1 are shown. Add it in Steam → Properties → Launch Options, then Refresh.",
+                    "Only games with ENABLE_VKSUMI=1 are shown. Use Show all to browse the rest; add the variable in Steam → Properties → Launch Options, then Refresh.",
                 );
+            if ui
+                .small_button(if self.show_all_steam {
+                    "Only enabled"
+                } else {
+                    "Show all"
+                })
+                .clicked()
+            {
+                self.show_all_steam = !self.show_all_steam;
+            }
             ui.add_space(6.0);
             if ui.button("Add").clicked() {
                 self.add_steam_open = true;
@@ -1873,14 +1891,17 @@ impl eframe::App for VibranceGuiApp {
                 // this window close.
                 if self.spawn_tray_helper() {
                     self.quit_requested = true;
-                    let _ = std::process::Command::new("notify-send")
-                        .args([
-                            "-a",
-                            "VibranceGUI for Linux",
-                            "Still running in the tray",
-                            "Use the tray icon to reopen. Quit from the ☰ menu.",
-                        ])
-                        .spawn();
+                    if !self.tray_hint_shown {
+                        self.tray_hint_shown = true;
+                        let _ = std::process::Command::new("notify-send")
+                            .args([
+                                "-a",
+                                "VibranceGUI for Linux",
+                                "Still running in the tray",
+                                "Use the tray icon to reopen. Quit from the ☰ menu.",
+                            ])
+                            .spawn();
+                    }
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 } else {
                     ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
