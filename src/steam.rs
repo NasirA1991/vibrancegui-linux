@@ -11,6 +11,9 @@ pub struct SteamGame {
     pub install_dir: PathBuf,
     pub artwork: Option<PathBuf>,
     pub launch_options: String,
+    pub manual: bool,
+    pub manual_exe: Option<PathBuf>,
+    pub manual_config: Option<PathBuf>,
 }
 
 impl SteamGame {
@@ -155,6 +158,9 @@ impl SteamData {
                         install_dir,
                         artwork,
                         launch_options,
+                        manual: false,
+                        manual_exe: None,
+                        manual_config: None,
                     });
                 }
             }
@@ -342,6 +348,9 @@ mod tests {
             install_dir: PathBuf::new(),
             artwork: None,
             launch_options: "mangohud %command%".into(),
+            manual: false,
+            manual_exe: None,
+            manual_config: None,
         };
         assert_eq!(
             game.suggested_launch_options(),

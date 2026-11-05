@@ -1,4 +1,5 @@
 mod app;
+mod artwork;
 mod config_doc;
 mod paths;
 mod process;
@@ -16,13 +17,17 @@ fn main() -> eframe::Result {
         return doctor();
     }
     let use_tray = !args.iter().any(|arg| arg == "--no-tray");
+    let start_hidden = args.iter().any(|arg| arg == "--hidden");
 
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../packaging/vibrancegui.png"))
+        .expect("valid app icon");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1040.0, 720.0])
-            .with_min_inner_size([780.0, 540.0])
+            .with_inner_size([540.0, 720.0])
+            .with_min_inner_size([460.0, 600.0])
             .with_title("VibranceGUI for Linux")
-            .with_app_id("vibrancegui"),
+            .with_app_id("vibrancegui")
+            .with_icon(icon),
         ..Default::default()
     };
 
@@ -31,7 +36,11 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             configure_theme(&cc.egui_ctx);
-            Ok(Box::new(app::VibranceGuiApp::new(cc, use_tray)))
+            Ok(Box::new(app::VibranceGuiApp::new(
+                cc,
+                use_tray,
+                start_hidden,
+            )))
         }),
     )
 }

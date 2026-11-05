@@ -23,6 +23,7 @@ makedepends=('rust')
 optdepends=(
   'vksumi: Vulkan color grading layer required to apply adjustments'
   'steam: Steam game library integration'
+  'xdg-desktop-portal: native file picker for Add manually'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/NasirA1991/vibrancegui-linux/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')

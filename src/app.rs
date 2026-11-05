@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::{Duration, Instant};
 
 use eframe::egui::{
@@ -30,9 +30,18 @@ pub struct VibranceGuiApp {
     paths: AppPaths,
     layer: VkSumiStatus,
     steam: SteamData,
+    games: Vec<SteamGame>,
     state: SavedState,
     selected: Option<u32>,
     search: String,
+    add_steam_open: bool,
+    add_steam_search: String,
+    add_manual_open: bool,
+    manual_name: String,
+    manual_exe: String,
+    manual_icon: String,
+    manual_config: String,
+    autostart: bool,
     global_doc: ConfigDoc,
     global_dirty: bool,
     global_last_change: Instant,
@@ -46,6 +55,10 @@ pub struct VibranceGuiApp {
     quit_requested: bool,
     textures: HashMap<u32, TextureHandle>,
     texture_attempted: HashSet<u32>,
+    artwork_paths: HashMap<u32, PathBuf>,
+    artwork_tx: Sender<u32>,
+    artwork_rx: Receiver<(u32, Option<PathBuf>)>,
+    artwork_requested: HashSet<u32>,
     status: StatusMessage,
     needs_editor_refresh: bool,
 }
@@ -98,7 +111,7 @@ struct GameEditor {
 }
 
 impl VibranceGuiApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, use_tray: bool) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, use_tray: bool, start_hidden: bool) -> Self {
         let paths = AppPaths::discover().expect("home directory");
         let _ = paths.ensure();
         let layer = VkSumiStatus::detect(&paths);
@@ -122,12 +135,28 @@ impl VibranceGuiApp {
             global_doc.set_path(paths.global_vksumi_conf());
         }
 
+        let (artwork_req_tx, artwork_req_rx) = mpsc::channel::<u32>();
+        let (artwork_done_tx, artwork_rx) = mpsc::channel();
+        let artwork_cache = paths.cache_dir.clone();
+        let artwork_ctx = cc.egui_ctx.clone();
+        std::thread::spawn(move || {
+            while let Ok(appid) = artwork_req_rx.recv() {
+                let path = crate::artwork::download(&artwork_cache, appid).ok();
+                let _ = artwork_done_tx.send((appid, path));
+                artwork_ctx.request_repaint();
+            }
+        });
+
         let (tray_tx, tray_rx) = mpsc::channel();
         let tray = if use_tray {
             tray::spawn(cc.egui_ctx.clone(), tray_tx)
         } else {
             None
         };
+        if start_hidden && tray.is_some() {
+            cc.egui_ctx
+                .send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
 
         let (tx, observation_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -162,9 +191,18 @@ impl VibranceGuiApp {
             paths,
             layer,
             steam,
+            games: Vec::new(),
             state,
             selected: None,
             search: String::new(),
+            add_steam_open: false,
+            add_steam_search: String::new(),
+            add_manual_open: false,
+            manual_name: String::new(),
+            manual_exe: String::new(),
+            manual_icon: String::new(),
+            manual_config: String::new(),
+            autostart: false,
             global_doc,
             global_dirty: false,
             global_last_change: Instant::now(),
@@ -178,29 +216,111 @@ impl VibranceGuiApp {
             quit_requested: false,
             textures: HashMap::new(),
             texture_attempted: HashSet::new(),
+            artwork_paths: HashMap::new(),
+            artwork_tx: artwork_req_tx,
+            artwork_rx,
+            artwork_requested: HashSet::new(),
             status: initial_status,
             needs_editor_refresh: false,
         };
+        app.ensure_default_tracking();
+        app.rebuild_games();
+        app.autostart = app.autostart_enabled();
         app.select_first_game();
+        if app.layer.usable && !app.steam.games.is_empty() {
+            app.status = StatusMessage::info(format!(
+                "vkSumi ready · {} tracked · {} installed",
+                app.games.len(),
+                app.steam.games.len()
+            ));
+        }
         app.refresh_observation();
         app
     }
 
-    fn select_first_game(&mut self) {
-        if self.selected.is_none() {
-            self.selected = self.steam.games.first().map(|g| g.appid);
-            self.open_selected();
+    fn ensure_default_tracking(&mut self) {
+        if self.state.tracking_initialized {
+            return;
+        }
+        for game in &self.steam.games {
+            if game.vk_enabled() || self.state.games.contains_key(&game.appid) {
+                self.state.tracked_steam.insert(game.appid);
+            }
+        }
+        self.state.tracking_initialized = true;
+        let _ = self.state.save(&self.paths);
+    }
+
+    fn manual_to_game(id: u32, manual: &crate::state::ManualGame) -> SteamGame {
+        SteamGame {
+            appid: id,
+            name: manual.name.clone(),
+            install_dir: manual
+                .exe
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default(),
+            artwork: manual.icon.clone(),
+            launch_options: String::new(),
+            manual: true,
+            manual_exe: Some(manual.exe.clone()),
+            manual_config: Some(manual.config_path.clone()),
         }
     }
 
+    fn rebuild_games(&mut self) {
+        let mut games: Vec<SteamGame> = self
+            .steam
+            .games
+            .iter()
+            .filter(|g| self.state.tracked_steam.contains(&g.appid))
+            .cloned()
+            .collect();
+        games.extend(
+            self.state
+                .manual_games
+                .iter()
+                .map(|(id, m)| Self::manual_to_game(*id, m)),
+        );
+        games.sort_by_key(|a| a.name.to_lowercase());
+        self.games = games;
+
+        if let Some(appid) = self.selected
+            && !self.games.iter().any(|g| g.appid == appid)
+        {
+            self.selected = None;
+            self.editor = None;
+        }
+    }
+
+    fn select_first_game(&mut self) {
+        // Start on the program grid, like VibranceGUI. Only a detected running
+        // game opens its settings automatically.
+        self.selected = None;
+        self.editor = None;
+    }
+
     fn game(&self, appid: u32) -> Option<&SteamGame> {
-        self.steam.games.iter().find(|g| g.appid == appid)
+        self.games.iter().find(|g| g.appid == appid)
     }
 
     fn running_for(&self, appid: u32) -> Option<&ObservedGame> {
-        self.observed
-            .iter()
-            .find(|o| o.appid == Some(appid) && !o.explicitly_disabled)
+        let game = self.game(appid)?;
+        if game.manual {
+            let exe = game
+                .manual_exe
+                .as_ref()
+                .and_then(|p| p.file_stem())
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            self.observed.iter().find(|o| {
+                !o.explicitly_disabled && o.exe.eq_ignore_ascii_case(exe) && o.appid.is_none()
+            })
+        } else {
+            self.observed
+                .iter()
+                .find(|o| o.appid == Some(appid) && !o.explicitly_disabled)
+        }
     }
 
     fn observed_path(&self, appid: u32) -> Option<PathBuf> {
@@ -211,6 +331,9 @@ impl VibranceGuiApp {
     }
 
     fn config_path_for(&self, game: &SteamGame) -> Option<PathBuf> {
+        if let Some(path) = &game.manual_config {
+            return Some(path.clone());
+        }
         if let Some(mapping) = self.state.games.get(&game.appid)
             && (mapping.config_path.exists() || self.paths.is_inside_vksumi(&mapping.config_path))
         {
@@ -220,6 +343,141 @@ impl VibranceGuiApp {
             return Some(expand_user_path(&env.to_string_lossy(), &self.paths.home));
         }
         self.observed_path(game.appid)
+    }
+
+    fn autostart_dir(&self) -> PathBuf {
+        self.paths
+            .vksumi_config_dir
+            .parent()
+            .unwrap_or(&self.paths.home)
+            .join("autostart")
+    }
+
+    fn autostart_file(&self) -> PathBuf {
+        self.autostart_dir().join("vibrancegui.desktop")
+    }
+
+    fn autostart_enabled(&self) -> bool {
+        self.autostart_file().is_file()
+    }
+
+    fn set_autostart(&mut self, enabled: bool) {
+        let path = self.autostart_file();
+        if enabled {
+            let exe = std::env::var_os("APPIMAGE")
+                .map(PathBuf::from)
+                .or_else(|| std::env::current_exe().ok())
+                .unwrap_or_else(|| PathBuf::from("vibrancegui"));
+            let exec = if exe.to_string_lossy().contains(' ') {
+                format!("\"{}\" --hidden", exe.display())
+            } else {
+                format!("{} --hidden", exe.display())
+            };
+            let desktop = format!(
+                "[Desktop Entry]\nType=Application\nName=VibranceGUI for Linux\nComment=Start VibranceGUI for Linux in the tray\nExec={exec}\nIcon=vibrancegui\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+            );
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::write(&path, desktop) {
+                Ok(()) => {
+                    self.autostart = true;
+                    self.status = StatusMessage::good("Will start with your desktop session");
+                }
+                Err(err) => {
+                    self.status = StatusMessage::warn(format!("Could not enable autostart: {err}"));
+                }
+            }
+        } else {
+            match std::fs::remove_file(&path) {
+                Ok(()) | Err(_) if !path.exists() => {
+                    self.autostart = false;
+                    self.status = StatusMessage::info("Autostart disabled");
+                }
+                Err(err) => {
+                    self.status =
+                        StatusMessage::warn(format!("Could not disable autostart: {err}"));
+                }
+                Ok(()) => {
+                    self.autostart = false;
+                    self.status = StatusMessage::info("Autostart disabled");
+                }
+            }
+        }
+    }
+
+    fn add_steam_game(&mut self, appid: u32) {
+        self.state.tracked_steam.insert(appid);
+        let _ = self.state.save(&self.paths);
+        self.rebuild_games();
+        self.selected = Some(appid);
+        self.open_selected();
+        self.add_steam_open = false;
+        self.status = StatusMessage::good("Game added");
+    }
+
+    fn add_manual_game(&mut self) {
+        let exe = PathBuf::from(self.manual_exe.trim());
+        if !exe.is_file() {
+            self.status = StatusMessage::warn("Executable path does not exist");
+            return;
+        }
+        let name = if self.manual_name.trim().is_empty() {
+            exe.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Manual game")
+                .to_string()
+        } else {
+            self.manual_name.trim().to_string()
+        };
+        let stem = exe.file_stem().and_then(|s| s.to_str()).unwrap_or("game");
+        let config = if self.manual_config.trim().is_empty() {
+            self.paths.vksumi_games_dir().join(format!("{stem}.conf"))
+        } else {
+            PathBuf::from(self.manual_config.trim())
+        };
+        let icon = if self.manual_icon.trim().is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(self.manual_icon.trim()))
+        };
+        let id = 0x8000_0000u32 | self.state.next_manual_id.max(1);
+        self.state.next_manual_id = self.state.next_manual_id.saturating_add(1).max(1);
+        self.state.manual_games.insert(
+            id,
+            crate::state::ManualGame {
+                name,
+                exe,
+                icon,
+                config_path: config,
+            },
+        );
+        let _ = self.state.save(&self.paths);
+        self.rebuild_games();
+        self.selected = Some(id);
+        self.open_selected();
+        self.add_manual_open = false;
+        self.manual_name.clear();
+        self.manual_exe.clear();
+        self.manual_icon.clear();
+        self.manual_config.clear();
+        self.status = StatusMessage::good("Manual game added");
+    }
+
+    fn remove_selected(&mut self) {
+        let Some(id) = self.selected else {
+            return;
+        };
+        if self.state.manual_games.remove(&id).is_some() {
+            let _ = self.state.save(&self.paths);
+        } else {
+            self.state.tracked_steam.remove(&id);
+            let _ = self.state.save(&self.paths);
+        }
+        self.selected = None;
+        self.editor = None;
+        self.rebuild_games();
+        self.status = StatusMessage::info("Removed from the list; config files were not deleted");
     }
 
     fn open_selected(&mut self) {
@@ -247,10 +505,14 @@ impl VibranceGuiApp {
             Ok(None) => {
                 let mut doc = ConfigDoc {
                     path: path.clone(),
-                    lines: vec![format!(
-                        "# vkSumi profile for {} (Steam AppID {})",
-                        game.name, game.appid
-                    )],
+                    lines: vec![if game.manual {
+                        format!("# vkSumi profile for {}", game.name)
+                    } else {
+                        format!(
+                            "# vkSumi profile for {} (Steam AppID {})",
+                            game.name, game.appid
+                        )
+                    }],
                 };
                 doc.set_path(path.clone());
                 doc
@@ -303,19 +565,61 @@ impl VibranceGuiApp {
                 }
             }
         }
+        // Link non-Steam processes by executable name and keep their effective
+        // VKSUMI_CONFIG_FILE, just like the Steam path above.
+        for obs in &self.observed {
+            if obs.explicitly_disabled {
+                continue;
+            }
+            let Some(config_path) = obs.config_path.clone() else {
+                continue;
+            };
+            for manual in self.state.manual_games.values_mut() {
+                let stem = manual
+                    .exe
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
+                if obs.appid.is_none()
+                    && manual_exe_matches(Some(&manual.exe), &obs.exe, stem)
+                    && manual.config_path != config_path
+                {
+                    manual.config_path = config_path.clone();
+                    changed = true;
+                }
+            }
+        }
         if changed {
             let _ = self.state.save(&self.paths);
             self.needs_editor_refresh = true;
         }
-        if self.editor.is_none()
-            && let Some(appid) = self
-                .observed
-                .iter()
-                .find_map(|o| if o.explicitly_disabled { None } else { o.appid })
-            && self.selected != Some(appid)
-        {
-            self.selected = Some(appid);
-            self.needs_editor_refresh = true;
+        if self.editor.is_none() {
+            let running_id = self.observed.iter().find_map(|o| {
+                if o.explicitly_disabled {
+                    return None;
+                }
+                if let Some(appid) = o.appid {
+                    return self.games.iter().any(|g| g.appid == appid).then_some(appid);
+                }
+                self.games.iter().find_map(|g| {
+                    if !g.manual {
+                        return None;
+                    }
+                    let stem = g
+                        .manual_exe
+                        .as_ref()
+                        .and_then(|p| p.file_stem())
+                        .and_then(|s| s.to_str())
+                        .unwrap_or_default();
+                    manual_exe_matches(g.manual_exe.as_deref(), &o.exe, stem).then_some(g.appid)
+                })
+            });
+            if let Some(id) = running_id
+                && self.selected != Some(id)
+            {
+                self.selected = Some(id);
+                self.needs_editor_refresh = true;
+            }
         }
         if self.needs_editor_refresh {
             self.open_selected();
@@ -394,11 +698,7 @@ impl VibranceGuiApp {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("VibranceGUI").size(22.0).strong().color(TEXT));
                     ui.add_space(8.0);
-                    ui.label(
-                        RichText::new("for Linux · vkSumi, made simple")
-                            .size(12.0)
-                            .color(MUTED),
-                    );
+                    ui.label(RichText::new("for Linux").size(12.0).color(MUTED));
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui.button("Refresh").clicked() {
                             self.refresh_library();
@@ -408,12 +708,6 @@ impl VibranceGuiApp {
                             self.layer.status_text(),
                             if self.layer.usable { OK } else { WARN },
                         );
-                        let account = self
-                            .steam
-                            .account_id
-                            .clone()
-                            .unwrap_or_else(|| "Steam".into());
-                        self.status_chip(ui, &format!("Steam {account}"), MUTED);
                     });
                 });
             });
@@ -472,16 +766,39 @@ impl VibranceGuiApp {
             .inner_margin(Margin::same(14))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Default").strong().color(TEXT));
+                    ui.label(RichText::new("Settings").strong().color(TEXT));
                     ui.label(
-                        RichText::new("for games without a per-game override")
-                            .size(11.0)
+                        RichText::new("applies to games without a per-game override")
+                            .size(10.0)
                             .color(MUTED),
                     );
                 });
+                let mut autostart = self.autostart;
+                if ui
+                    .checkbox(&mut autostart, "Start VibranceGUI with my desktop session")
+                    .changed()
+                {
+                    self.set_autostart(autostart);
+                }
+                let mut primary_only = false;
+                ui.add_enabled(
+                    false,
+                    egui::Checkbox::new(
+                        &mut primary_only,
+                        "Affect primary monitor only (not applicable to Vulkan layers)",
+                    ),
+                )
+                .on_disabled_hover_text(
+                    "vkSumi grades the game swapchain. This app cannot restrict it to one monitor.",
+                );
+                ui.add_space(4.0);
                 let mut value = self.global_value("vibrance");
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Vibrance").size(11.0).color(MUTED));
+                    ui.label(
+                        RichText::new("Default Vibrance Level")
+                            .size(11.0)
+                            .color(MUTED),
+                    );
                     ui.label(
                         RichText::new(format!("{value:+.2}"))
                             .monospace()
@@ -528,39 +845,58 @@ impl VibranceGuiApp {
         });
     }
 
-    fn draw_library(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let enabled_count = self.steam.games.iter().filter(|g| g.vk_enabled()).count();
+    fn draw_library(&mut self, ui: &mut egui::Ui) {
+        let enabled_count = self
+            .games
+            .iter()
+            .filter(|g| g.vk_enabled() || self.running_for(g.appid).is_some())
+            .count();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Program Settings").strong().color(TEXT));
+            ui.add_space(6.0);
+            if ui.button("Add").clicked() {
+                self.add_steam_open = true;
+                self.add_steam_search.clear();
+            }
+            if ui.button("Add manually").clicked() {
+                self.add_manual_open = true;
+            }
+            if ui
+                .add_enabled(self.selected.is_some(), egui::Button::new("Remove"))
+                .clicked()
+            {
+                self.remove_selected();
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if !self.scan_available {
+                    ui.label(RichText::new("scan unavailable").size(10.0).color(WARN));
+                }
+            });
+        });
+        ui.add_space(3.0);
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!(
-                    "Games · {} · {} enabled",
-                    self.steam.games.len(),
+                    "{} tracked · {} enabled",
+                    self.games.len(),
                     enabled_count
                 ))
-                .strong()
-                .color(TEXT),
+                .size(10.0)
+                .color(MUTED),
             );
-            ui.add_space(8.0);
+            ui.add_space(6.0);
             let search = egui::TextEdit::singleline(&mut self.search)
-                .hint_text("Search games…")
-                .desired_width(220.0);
+                .hint_text("Search…")
+                .desired_width(150.0);
             ui.add(search);
             if !self.search.is_empty() && ui.small_button("clear").clicked() {
                 self.search.clear();
             }
-            if !self.scan_available {
-                ui.label(
-                    RichText::new("/proc scan unavailable")
-                        .size(10.0)
-                        .color(WARN),
-                );
-            }
         });
-        ui.add_space(10.0);
+        ui.add_space(8.0);
 
         let needle = self.search.to_lowercase();
         let mut indices: Vec<usize> = self
-            .steam
             .games
             .iter()
             .enumerate()
@@ -568,8 +904,8 @@ impl VibranceGuiApp {
             .map(|(i, _)| i)
             .collect();
         indices.sort_by(|&a, &b| {
-            let ga = &self.steam.games[a];
-            let gb = &self.steam.games[b];
+            let ga = &self.games[a];
+            let gb = &self.games[b];
             let score = |g: &SteamGame| {
                 let running = self.running_for(g.appid).is_some() as u8;
                 let enabled = g.vk_enabled() as u8;
@@ -585,24 +921,27 @@ impl VibranceGuiApp {
         if indices.is_empty() {
             ui.add_space(30.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("No games found").color(MUTED));
+                ui.label(RichText::new("No programs yet").color(MUTED));
                 ui.label(
-                    RichText::new("Check your Steam library paths or clear the search.")
-                        .size(11.0)
-                        .color(MUTED),
+                    RichText::new(
+                        "Use Add for a Steam game or Add manually for another executable.",
+                    )
+                    .size(11.0)
+                    .color(MUTED),
                 );
             });
             return;
         }
 
+        let ctx = ui.ctx().clone();
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = Vec2::new(10.0, 12.0);
+                    ui.spacing_mut().item_spacing = Vec2::new(8.0, 10.0);
                     for idx in indices {
-                        let game = self.steam.games[idx].clone();
-                        self.draw_game_tile(ui, ctx, &game);
+                        let game = self.games[idx].clone();
+                        self.draw_game_tile(ui, &ctx, &game);
                     }
                 });
                 ui.add_space(12.0);
@@ -613,7 +952,7 @@ impl VibranceGuiApp {
         let selected = self.selected == Some(game.appid);
         let running = self.running_for(game.appid).is_some();
         let enabled = game.vk_enabled();
-        let tile_size = Vec2::new(176.0, 136.0);
+        let tile_size = Vec2::new(92.0, 112.0);
         let (rect, response) = ui.allocate_exact_size(tile_size, Sense::click());
         if response.clicked() {
             self.set_selected(game.appid);
@@ -627,7 +966,7 @@ impl VibranceGuiApp {
         } else {
             PANEL
         };
-        painter.rect_filled(rect, CornerRadius::same(9), bg);
+        painter.rect_filled(rect, CornerRadius::same(8), bg);
         if selected {
             painter.rect_stroke(
                 rect,
@@ -637,7 +976,7 @@ impl VibranceGuiApp {
             );
         }
 
-        let image_rect = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), 94.0));
+        let image_rect = egui::Rect::from_min_size(rect.min, Vec2::new(rect.width(), 70.0));
         if let Some(texture) = self.texture_for(ctx, game) {
             painter.image(
                 texture.id(),
@@ -648,8 +987,8 @@ impl VibranceGuiApp {
             // Darken the bottom slightly so the title remains readable.
             painter.rect_filled(
                 egui::Rect::from_min_size(
-                    egui::pos2(rect.left(), rect.top() + 70.0),
-                    Vec2::new(rect.width(), 24.0),
+                    egui::pos2(rect.left(), rect.top() + 52.0),
+                    Vec2::new(rect.width(), 18.0),
                 ),
                 CornerRadius::ZERO,
                 Color32::from_black_alpha(70),
@@ -662,17 +1001,17 @@ impl VibranceGuiApp {
                 image_rect.center(),
                 Align2::CENTER_CENTER,
                 initials,
-                FontId::proportional(30.0),
+                FontId::proportional(22.0),
                 Color32::from_white_alpha(210),
             );
         }
 
-        let title = elide(&game.name, 25);
+        let title = elide(&game.name, 16);
         painter.text(
-            egui::pos2(rect.left() + 9.0, rect.top() + 103.0),
+            egui::pos2(rect.left() + 5.0, rect.top() + 74.0),
             Align2::LEFT_TOP,
             title,
-            FontId::proportional(13.0),
+            FontId::proportional(10.0),
             TEXT,
         );
         let sub = if running {
@@ -687,6 +1026,8 @@ impl VibranceGuiApp {
             }
         } else if enabled {
             "vkSumi enabled"
+        } else if game.manual {
+            "non-Steam"
         } else {
             "not enabled"
         };
@@ -698,10 +1039,10 @@ impl VibranceGuiApp {
             MUTED
         };
         painter.text(
-            egui::pos2(rect.left() + 9.0, rect.top() + 119.0),
+            egui::pos2(rect.left() + 5.0, rect.top() + 90.0),
             Align2::LEFT_TOP,
             sub,
-            FontId::proportional(10.0),
+            FontId::proportional(8.0),
             sub_color,
         );
         if enabled || running {
@@ -721,19 +1062,172 @@ impl VibranceGuiApp {
             return None;
         }
         self.texture_attempted.insert(game.appid);
-        let path = game.artwork.as_ref()?;
-        let image = image::open(path).ok()?;
-        let image = image.resize_to_fill(352, 188, image::imageops::FilterType::Triangle);
+
+        let local = game.artwork.as_ref().filter(|p| p.is_file());
+        let cached = self.artwork_paths.get(&game.appid).cloned().or_else(|| {
+            let path = crate::artwork::cache_path(&self.paths.cache_dir, game.appid);
+            path.is_file().then_some(path)
+        });
+        let path = local.or(cached.as_ref())?;
+        let Ok(image) = image::open(path) else {
+            return None;
+        };
+        let image = image.resize_to_fill(256, 256, image::imageops::FilterType::Triangle);
         let rgba = image.to_rgba8();
         let size = [rgba.width() as usize, rgba.height() as usize];
         let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
         let texture = ctx.load_texture(
-            format!("steam-art-{}", game.appid),
+            format!("art-{}", game.appid),
             color_image,
             TextureOptions::LINEAR,
         );
         self.textures.insert(game.appid, texture.clone());
         Some(texture)
+    }
+
+    fn draw_game_window(&mut self, ctx: &egui::Context) {
+        let Some(appid) = self.selected else {
+            return;
+        };
+        let Some(game) = self.game(appid).cloned() else {
+            return;
+        };
+        let mut open = true;
+        egui::Window::new(format!("{} — settings", game.name))
+            .open(&mut open)
+            .default_width(430.0)
+            .min_width(360.0)
+            .max_height(640.0)
+            .resizable(true)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        self.draw_detail(ui);
+                    });
+            });
+        if !open {
+            self.selected = None;
+            self.editor = None;
+        }
+    }
+
+    fn draw_add_steam_window(&mut self, ctx: &egui::Context) {
+        if !self.add_steam_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Add a Steam game")
+            .open(&mut open)
+            .default_width(430.0)
+            .max_height(520.0)
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new("Installed Steam games")
+                        .size(11.0)
+                        .color(MUTED),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.add_steam_search)
+                        .hint_text("Search Steam games…"),
+                );
+                ui.add_space(4.0);
+                let needle = self.add_steam_search.to_lowercase();
+                let candidates: Vec<(u32, String)> = self
+                    .steam
+                    .games
+                    .iter()
+                    .filter(|g| !self.state.tracked_steam.contains(&g.appid))
+                    .filter(|g| needle.is_empty() || g.name.to_lowercase().contains(&needle))
+                    .map(|g| (g.appid, g.name.clone()))
+                    .collect();
+                egui::ScrollArea::vertical()
+                    .max_height(420.0)
+                    .show(ui, |ui| {
+                        for (appid, name) in candidates {
+                            if ui.button(format!("+ {name}")).clicked() {
+                                self.add_steam_game(appid);
+                            }
+                        }
+                    });
+            });
+        if !open {
+            self.add_steam_open = false;
+        }
+    }
+
+    fn draw_add_manual_window(&mut self, ctx: &egui::Context) {
+        if !self.add_manual_open {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Add a non-Steam game")
+            .open(&mut open)
+            .default_width(440.0)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(RichText::new("Executable").size(10.0).color(MUTED));
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.manual_exe)
+                            .hint_text("/path/to/game or game.exe")
+                            .desired_width(310.0),
+                    );
+                    if ui.button("Browse…").clicked()
+                        && let Some(path) = rfd::FileDialog::new().pick_file()
+                    {
+                        if self.manual_name.trim().is_empty() {
+                            self.manual_name = path
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or_default()
+                                .to_string();
+                        }
+                        self.manual_exe = path.display().to_string();
+                    }
+                });
+                ui.label(RichText::new("Display name").size(10.0).color(MUTED));
+                ui.add(egui::TextEdit::singleline(&mut self.manual_name).hint_text("Optional"));
+                ui.label(RichText::new("Icon path").size(10.0).color(MUTED));
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.manual_icon)
+                            .hint_text("Optional PNG/JPG path")
+                            .desired_width(310.0),
+                    );
+                    if ui.button("Browse…").clicked()
+                        && let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Image", &["png", "jpg", "jpeg", "webp"])
+                            .pick_file()
+                    {
+                        self.manual_icon = path.display().to_string();
+                    }
+                });
+                ui.label(RichText::new("vkSumi config").size(10.0).color(MUTED));
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.manual_config)
+                        .hint_text("Optional; derived from executable name"),
+                );
+                ui.label(
+                    RichText::new(
+                        "Launch the game with ENABLE_VKSUMI=1 from its launcher; this app only manages the profile.",
+                    )
+                    .size(9.0)
+                    .color(MUTED),
+                );
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Add game").clicked() {
+                        self.add_manual_game();
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.add_manual_open = false;
+                    }
+                });
+            });
+        if !open {
+            self.add_manual_open = false;
+        }
     }
 
     fn draw_detail(&mut self, ui: &mut egui::Ui) {
@@ -761,15 +1255,22 @@ impl VibranceGuiApp {
             }
             ui.label(RichText::new(&game.name).size(20.0).strong().color(TEXT));
         });
-        ui.label(
-            RichText::new(format!(
+        let subtitle = if game.manual {
+            format!(
+                "Non-Steam · {}",
+                game.manual_exe
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "unknown executable".into())
+            )
+        } else {
+            format!(
                 "Steam AppID {} · {}",
                 game.appid,
                 game.install_dir.display()
-            ))
-            .size(10.0)
-            .color(MUTED),
-        );
+            )
+        };
+        ui.label(RichText::new(subtitle).size(10.0).color(MUTED));
         ui.add_space(10.0);
 
         let running = self.running_for(appid).cloned();
@@ -876,10 +1377,17 @@ impl VibranceGuiApp {
         ui.add_space(2.0);
         self.draw_knob(ui, 0);
         ui.add_space(8.0);
-        ui.collapsing("Advanced", |ui| {
+        ui.collapsing("Advanced (all vkSumi sliders)", |ui| {
             for i in 1..KNOBS.len() {
                 self.draw_knob(ui, i);
             }
+            ui.label(
+                RichText::new(
+                    "Daltonize mode and the censor-box editor are not exposed yet; they remain editable in the config file.",
+                )
+                .size(9.0)
+                .color(MUTED),
+            );
         });
         ui.add_space(10.0);
         ui.horizontal(|ui| {
@@ -915,6 +1423,43 @@ impl VibranceGuiApp {
     }
 
     fn draw_enable_state(&mut self, ui: &mut egui::Ui, game: &SteamGame) {
+        if game.manual {
+            if self.running_for(game.appid).is_some() {
+                ui.label(
+                    RichText::new("Detected while running with ENABLE_VKSUMI=1.")
+                        .size(11.0)
+                        .color(OK),
+                );
+            } else {
+                ui.label(
+                    RichText::new(
+                        "Launch this executable with ENABLE_VKSUMI=1 to activate the layer.",
+                    )
+                    .size(11.0)
+                    .color(WARN),
+                );
+                let exe = game
+                    .manual_exe
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "game".into());
+                let command = format!("ENABLE_VKSUMI=1 {exe}");
+                Frame::new()
+                    .fill(PANEL_2)
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Label::new(RichText::new(&command).monospace().size(10.0)).wrap(),
+                        );
+                    });
+                if ui.button("Copy launch command").clicked() {
+                    ui.ctx().copy_text(command);
+                    self.status = StatusMessage::good("Launch command copied");
+                }
+            }
+            return;
+        }
         if game.disabled() {
             ui.label(
                 RichText::new("DISABLE_VKSUMI=1 is set — vkSumi is explicitly disabled.")
@@ -1022,17 +1567,44 @@ impl VibranceGuiApp {
 }
 
 impl VibranceGuiApp {
+    fn poll_artwork(&mut self, ctx: &egui::Context) {
+        let request: Vec<u32> = self
+            .games
+            .iter()
+            .filter(|g| !g.manual)
+            .filter(|g| !self.textures.contains_key(&g.appid))
+            .filter(|g| self.texture_attempted.contains(&g.appid))
+            .map(|g| g.appid)
+            .filter(|appid| self.artwork_requested.insert(*appid))
+            .collect();
+        for appid in request {
+            if self.artwork_tx.send(appid).is_err() {
+                break;
+            }
+            ctx.request_repaint();
+        }
+    }
+
     fn refresh_library(&mut self) {
         self.steam = SteamData::discover();
         self.layer = VkSumiStatus::detect(&self.paths);
         self.textures.clear();
         self.texture_attempted.clear();
+        self.rebuild_games();
         self.status = StatusMessage::info("Steam library refreshed");
     }
 }
 
 impl eframe::App for VibranceGuiApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        while let Ok((appid, path)) = self.artwork_rx.try_recv() {
+            if let Some(path) = path {
+                self.artwork_paths.insert(appid, path);
+            }
+            self.texture_attempted.remove(&appid);
+            ctx.request_repaint();
+        }
+        self.poll_artwork(ctx);
         if ctx.input(|i| i.key_pressed(egui::Key::Q) && i.modifiers.command) {
             self.quit_requested = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -1082,32 +1654,21 @@ impl eframe::App for VibranceGuiApp {
         egui::Panel::bottom("status").show(ui, |ui| {
             self.draw_bottom_status(ui);
         });
-        egui::Panel::right("detail")
-            .resizable(true)
-            .default_size(390.0)
-            .min_size(330.0)
-            .show(ui, |ui| {
-                Frame::new()
-                    .fill(PANEL)
-                    .inner_margin(Margin::same(16))
-                    .show(ui, |ui| {
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                self.draw_detail(ui);
-                            });
-                    });
-            });
         egui::CentralPanel::default().show(ui, |ui| {
-            ui.add_space(10.0);
+            ui.add_space(8.0);
             if !self.layer.usable {
                 self.draw_missing_layer(ui);
-                ui.add_space(10.0);
+                ui.add_space(8.0);
             }
             self.draw_default_card(ui);
-            ui.add_space(12.0);
-            self.draw_library(ui, &ctx);
+            ui.add_space(10.0);
+            self.draw_library(ui);
+            ui.add_space(6.0);
         });
+
+        self.draw_game_window(&ctx);
+        self.draw_add_steam_window(&ctx);
+        self.draw_add_manual_window(&ctx);
 
         self.save_global_if_due();
         self.save_editor_if_due();
@@ -1128,6 +1689,17 @@ fn now_unix() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+fn manual_exe_matches(path: Option<&Path>, observed: &str, stem: &str) -> bool {
+    let Some(path) = path else {
+        return false;
+    };
+    let file = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    file.eq_ignore_ascii_case(observed) || stem.eq_ignore_ascii_case(observed)
 }
 
 fn value_slider(

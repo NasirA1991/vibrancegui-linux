@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::paths::AppPaths;
@@ -11,13 +11,25 @@ pub struct SavedState {
     pub schema_version: u32,
     #[serde(default)]
     pub games: BTreeMap<u32, GameMapping>,
+    #[serde(default)]
+    pub tracked_steam: BTreeSet<u32>,
+    #[serde(default)]
+    pub manual_games: BTreeMap<u32, ManualGame>,
+    #[serde(default)]
+    pub next_manual_id: u32,
+    #[serde(default)]
+    pub tracking_initialized: bool,
 }
 
 impl Default for SavedState {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: 2,
             games: BTreeMap::new(),
+            tracked_steam: BTreeSet::new(),
+            manual_games: BTreeMap::new(),
+            next_manual_id: 1,
+            tracking_initialized: false,
         }
     }
 }
@@ -29,14 +41,22 @@ pub struct GameMapping {
     pub updated_unix: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManualGame {
+    pub name: String,
+    pub exe: PathBuf,
+    pub icon: Option<PathBuf>,
+    pub config_path: PathBuf,
+}
+
 impl SavedState {
     pub fn load(paths: &AppPaths) -> Self {
         let Ok(text) = std::fs::read_to_string(&paths.state_file) else {
             return Self::default();
         };
         let mut state: Self = serde_json::from_str(&text).unwrap_or_default();
-        if state.schema_version == 0 {
-            state.schema_version = 1;
+        if state.schema_version < 2 {
+            state.schema_version = 2;
         }
         state
     }
@@ -59,7 +79,7 @@ mod tests {
 
     #[test]
     fn default_state_has_current_schema() {
-        assert_eq!(SavedState::default().schema_version, 1);
+        assert_eq!(SavedState::default().schema_version, 2);
         assert!(SavedState::default().games.is_empty());
     }
 }

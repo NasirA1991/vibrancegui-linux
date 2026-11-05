@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.1.1 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.1.2 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 
@@ -18,19 +18,25 @@ VibranceGUI for Linux v0.1.1 is a **vkSumi profile editor with Steam discovery a
   - `VKSUMI_CONFIG_FILE` from the running process, if present;
   - otherwise vkSumi's per-executable `~/.config/vkSumi/games/<exe>.conf`.
 - Edits the profile live; vkSumi hot-reloads it.
+- A compact **VibranceGUI-style window**: Settings card, default vibrance, Program Settings with icons, Add / Add manually / Remove.
 - A global default vibrance slider that writes only `vibrance` to the global vkSumi config.
-- Basic per-game controls (Vibrance, Saturation, Temperature, Contrast, Brightness, Gamma, Exposure).
+- **All numeric vkSumi sliders** in the per-game Advanced section: saturation, temperature, contrast, brightness, gamma, exposure, hue, RGB gains, shadows/midtones/highlights, six hue bands, split toning, vignette, and daltonize strength/severity.
+- **Steam artwork icons**, downloaded on demand from Steam's CDN and cached in `~/.cache/vibrancegui/artwork`.
+- **Non-Steam games**: add any Linux/Proton executable manually, with an optional icon and config path, using a native file picker. Running processes are matched by executable name.
+- **Tracked programs**: the main grid shows the games you add (initially the Steam games with vkSumi enabled), not all 55 installed games.
+- **Autostart** checkbox writes an XDG autostart entry that starts the app hidden in the tray (`--hidden`).
 - Atomic profile writes and timestamped backups.
 - Never writes Steam configuration in this version.
 - Close-to-tray support (StatusNotifierItem). Closing the window hides it; use the tray menu to show, refresh, or quit. `--no-tray` disables this.
-- Runs on demand: process scanning stops when the process exits. No daemon or autostart.
+- Runs on demand: process scanning stops when the process exits.
 
 ## What does not work yet
 
 - No automatic Steam launch-option editing.
 - No Enable/Disable button. Removing `ENABLE_VKSUMI=1` from Steam is still the only true off switch.
-- No Heroic, Lutris, Faugus, or Flatpak Steam support.
-- No censor-box editor or full advanced filter set.
+- No Heroic, Lutris, Faugus, or Flatpak Steam library import. Non-Steam games can be added manually.
+- No censor-box editor; daltonize mode is still config-file-only. Numeric daltonize sliders are exposed.
+- “Affect primary monitor only” is not applicable: vkSumi grades the game's Vulkan swapchain, so the app shows it disabled rather than pretending to control monitors.
 - HDR/non-sRGB games may show no effect; OpenGL games do not work; anti-cheat may block Vulkan layers.
 
 ## vkSumi dependency
@@ -86,6 +92,12 @@ Run:
 
 A prebuilt binary is available on the [GitHub release page](https://github.com/NasirA1991/vibrancegui-linux/releases/latest).
 
+## UI
+
+The UI is **egui/eframe**, not GTK. It is a native Rust window with a custom dark theme; no web view and no GTK dependency. The layout intentionally mirrors VibranceGUI: Settings at the top, Program Settings below, icons, and a status line. Game settings open in a compact window with Basic and Advanced sliders.
+
+If you add a non-Steam game, use **Add manually**, enter the executable path, optionally an icon and a `VKSUMI_CONFIG_FILE` path, then launch the game with `ENABLE_VKSUMI=1`. The app matches the running executable by name and links its config.
+
 ## First-time use
 
 1. In Steam, right-click the game → **Properties → Launch Options**.
@@ -121,7 +133,7 @@ vkSumi is a Vulkan layer. It must be present before the game creates its Vulkan 
 
 ## Global default vs per-game profiles
 
-- The **Default** slider writes `vibrance` to `~/.config/vkSumi/vkSumi.conf`.
+- The **Default Vibrance Level** slider writes `vibrance` to `~/.config/vkSumi/vkSumi.conf`.
 - A per-game slider writes an override to that game's profile.
 - **reset** on a control removes the override, so the game inherits the global value.
 - **Reset overrides** removes all app-managed overrides from that profile.
@@ -158,8 +170,10 @@ src/
   vdf.rs         read-only Valve KeyValues parser
   process.rs     /proc environment/cmdline/maps observation
   config_doc.rs  line-preserving vkSumi .conf editor
-  vksumi.rs      layer manifest health check
-  state.rs       remembered AppID -> profile mapping
+  artwork.rs     Steam CDN artwork cache/download
+  tray.rs        StatusNotifierItem tray and menu
+  vksumi.rs      layer manifest/library health check
+  state.rs       tracked games, manual games, profile mapping
   paths.rs       XDG paths and path expansion
 packaging/
   vibrancegui.desktop
@@ -187,9 +201,9 @@ The same workflow updates the AUR package from the tag archive. Required reposit
 ## Roadmap
 
 - **v0.2:** managed Steam launch-option writing, stable AppID profiles via `VKSUMI_CONFIG_FILE`, backups/rollback, drift detection.
-- Censor-box editor.
-- Full advanced filters.
-- More launchers only after their config formats are verified.
+- Censor-box editor and daltonize mode selector.
+- Heroic/Lutris import only after their config formats are verified.
+- Optional Flatpak build if a safe host-config/layer integration can be designed.
 
 ## License and naming
 
