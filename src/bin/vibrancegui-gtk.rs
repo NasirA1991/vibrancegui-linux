@@ -157,6 +157,9 @@ fn build_ui(app: &adw::Application) {
         .build();
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new("VibranceGUI", "for Linux")));
+    let refresh = gtk::Button::with_label("Refresh");
+    refresh.connect_clicked(|_| restart_app());
+    header.pack_start(&refresh);
 
     let menu = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
@@ -198,6 +201,33 @@ fn build_ui(app: &adw::Application) {
     popover.set_child(Some(&menu_box));
     menu.set_popover(Some(&popover));
     header.pack_end(&menu);
+
+    let missing_art: Vec<u32> = all_games
+        .iter()
+        .filter(|g| !g.manual)
+        .filter(|g| {
+            g.artwork.as_ref().map(|p| !p.is_file()).unwrap_or(true)
+                && !artwork::cache_path(&paths.cache_dir, g.appid).is_file()
+        })
+        .map(|g| g.appid)
+        .collect();
+    if !missing_art.is_empty() {
+        let cache = paths.cache_dir.clone();
+        std::thread::spawn(move || {
+            let mut downloaded = false;
+            for appid in missing_art {
+                if artwork::download(&cache, appid).is_ok() {
+                    downloaded = true;
+                }
+            }
+            if downloaded {
+                gtk::glib::idle_add(|| {
+                    restart_app();
+                    gtk::glib::ControlFlow::Continue
+                });
+            }
+        });
+    }
 
     let stack = gtk::Stack::new();
     let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -387,11 +417,19 @@ fn build_ui(app: &adw::Application) {
         card.set_margin_bottom(6);
         card.set_margin_start(6);
         card.set_margin_end(6);
-        let icon_path = game.artwork.clone().filter(|p| p.is_file()).or_else(|| {
-            game.manual_exe
-                .as_ref()
-                .and_then(|exe| artwork::extract_exe_icon(&paths.cache_dir, exe))
-        });
+        let icon_path = game
+            .artwork
+            .clone()
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                let cached = artwork::cache_path(&paths.cache_dir, game.appid);
+                cached.is_file().then_some(cached)
+            })
+            .or_else(|| {
+                game.manual_exe
+                    .as_ref()
+                    .and_then(|exe| artwork::extract_exe_icon(&paths.cache_dir, exe))
+            });
         let image = if let Some(p) = icon_path.as_ref() {
             gtk::Image::from_file(p)
         } else {
@@ -452,6 +490,47 @@ fn build_ui(app: &adw::Application) {
         }
         gtk::glib::ControlFlow::Continue
     });
+
+    let detect_paths = paths.clone();
+    gtk::glib::timeout_add_seconds_local(3, move || {
+        let mut state = SavedState::load(&detect_paths);
+        let mut adopted = false;
+        for obs in process::scan(&detect_paths).games {
+            if obs.appid.is_some() || obs.explicitly_disabled {
+                continue;
+            }
+            let Some(exe) = obs.exe_path.clone() else {
+                continue;
+            };
+            if state.manual_games.values().any(|m| m.exe == exe) {
+                continue;
+            }
+            let id = 0x8000_0000u32 | state.next_manual_id.max(1);
+            state.next_manual_id = state.next_manual_id.saturating_add(1).max(1);
+            let stem = exe
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("game")
+                .to_string();
+            state.manual_games.insert(
+                id,
+                state::ManualGame {
+                    name: stem.clone(),
+                    icon: artwork::extract_exe_icon(&detect_paths.cache_dir, &exe),
+                    exe,
+                    config_path: obs.config_path.unwrap_or_else(|| {
+                        detect_paths.vksumi_games_dir().join(format!("{stem}.conf"))
+                    }),
+                },
+            );
+            adopted = true;
+        }
+        if adopted {
+            let _ = state.save(&detect_paths);
+            restart_app();
+        }
+        gtk::glib::ControlFlow::Continue
+    });
 }
 
 fn config_path_for(
@@ -485,6 +564,8 @@ fn build_detail_page(
     back.connect_clicked(move |_| {
         stack_clone.set_visible_child_name("games");
     });
+    let reload = gtk::Button::with_label("Reload");
+    reload.connect_clicked(|_| restart_app());
     let remove = gtk::Button::with_label("Remove");
     let remove_paths = paths.clone();
     let appid = game.appid;
@@ -497,6 +578,7 @@ fn build_detail_page(
     });
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     top.append(&back);
+    top.append(&reload);
     top.append(&remove);
     page.append(&top);
     let title = gtk::Label::new(Some(&game.name));
