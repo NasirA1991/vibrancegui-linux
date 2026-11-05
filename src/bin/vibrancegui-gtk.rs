@@ -22,6 +22,8 @@ use gtk::prelude::*;
 use gtk4 as gtk;
 use libadwaita as adw;
 
+use std::path::PathBuf;
+
 use config_doc::ConfigDoc;
 use paths::AppPaths;
 use state::SavedState;
@@ -91,6 +93,7 @@ fn build_ui(app: &adw::Application) {
     menu.set_popover(Some(&popover));
     header.pack_end(&menu);
 
+    let stack = gtk::Stack::new();
     let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
     content.set_margin_top(12);
     content.set_margin_bottom(12);
@@ -172,6 +175,18 @@ fn build_ui(app: &adw::Application) {
         name.set_xalign(0.0);
         card.append(&name);
         b.set_child(Some(&card));
+        let stack_clone = stack.clone();
+        let paths_clone = paths.clone();
+        let state_clone = state.clone();
+        let game_clone = game.clone();
+        b.connect_clicked(move |_| {
+            let detail = build_detail_page(&paths_clone, &state_clone, &game_clone, &stack_clone);
+            if let Some(old) = stack_clone.child_by_name("detail") {
+                stack_clone.remove(&old);
+            }
+            stack_clone.add_named(&detail, Some("detail"));
+            stack_clone.set_visible_child_name("detail");
+        });
         flow.insert(&b, -1);
     }
     let scroll = gtk::ScrolledWindow::builder()
@@ -190,7 +205,96 @@ fn build_ui(app: &adw::Application) {
     status.add_css_class("dim-label");
     content.append(&status);
 
+    stack.add_named(&content, Some("games"));
     window.set_titlebar(Some(&header));
-    window.set_child(Some(&content));
+    window.set_child(Some(&stack));
     window.present();
+}
+
+fn config_path_for(
+    paths: &AppPaths,
+    state: &SavedState,
+    game: &steam::SteamGame,
+) -> Option<PathBuf> {
+    if let Some(mapping) = state.games.get(&game.appid) {
+        return Some(mapping.config_path.clone());
+    }
+    if let Some(env) = game.config_env() {
+        return Some(paths::expand_user_path(&env.to_string_lossy(), &paths.home));
+    }
+    let stem = game.manual_exe.as_ref()?.file_stem()?.to_str()?;
+    Some(paths.vksumi_games_dir().join(format!("{stem}.conf")))
+}
+
+fn build_detail_page(
+    paths: &AppPaths,
+    state: &SavedState,
+    game: &steam::SteamGame,
+    stack: &gtk::Stack,
+) -> gtk::Widget {
+    let page = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    page.set_margin_top(12);
+    page.set_margin_bottom(12);
+    page.set_margin_start(12);
+    page.set_margin_end(12);
+    let back = gtk::Button::with_label("← Games");
+    let stack_clone = stack.clone();
+    back.connect_clicked(move |_| {
+        stack_clone.set_visible_child_name("games");
+    });
+    page.append(&back);
+    let title = gtk::Label::new(Some(&game.name));
+    title.set_xalign(0.0);
+    title.add_css_class("title-2");
+    page.append(&title);
+    page.append(&gtk::Label::new(Some(if game.vk_enabled() {
+        "vkSumi is enabled in this game's launch options."
+    } else {
+        "vkSumi is not enabled for this game yet."
+    })));
+    let Some(path) = config_path_for(paths, state, game) else {
+        page.append(&gtk::Label::new(Some(
+            "No profile linked yet. Launch with ENABLE_VKSUMI=1, then Refresh.",
+        )));
+        return page.upcast();
+    };
+    let mut doc = match ConfigDoc::load(&path) {
+        Ok(Some(doc)) => doc,
+        Ok(None) => {
+            let mut d = ConfigDoc {
+                path: path.clone(),
+                lines: Vec::new(),
+            };
+            d.set_path(path.clone());
+            d
+        }
+        Err(err) => {
+            page.append(&gtk::Label::new(Some(&format!(
+                "Could not read profile: {err}"
+            ))));
+            return page.upcast();
+        }
+    };
+    page.append(&gtk::Label::new(Some(&path.display().to_string())));
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.append(&gtk::Label::new(Some("Vibrance")));
+    let slider = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.01);
+    slider.set_hexpand(true);
+    slider.set_draw_value(false);
+    slider.set_value(doc.get_f32("vibrance").unwrap_or(0.0).clamp(0.0, 1.0) as f64);
+    let value = gtk::Label::new(Some(&format!("{:.0}%", slider.value() * 100.0)));
+    let value_clone = value.clone();
+    let paths_save = paths.clone();
+    let doc = std::rc::Rc::new(std::cell::RefCell::new(doc));
+    let doc_clone = doc.clone();
+    slider.connect_value_changed(move |s| {
+        value_clone.set_label(&format!("{:.0}%", s.value() * 100.0));
+        let mut d = doc_clone.borrow_mut();
+        d.set_f32("vibrance", s.value() as f32);
+        let _ = d.save(&paths_save);
+    });
+    row.append(&slider);
+    row.append(&value);
+    page.append(&row);
+    page.upcast()
 }
