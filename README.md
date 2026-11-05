@@ -6,7 +6,7 @@
 - AUR: <https://aur.archlinux.org/packages/vibrancegui-linux>
 - Release: <https://github.com/NasirA1991/vibrancegui-linux/releases/latest>
 
-VibranceGUI for Linux v0.2.0 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
+VibranceGUI for Linux v0.2.1 is a **vkSumi profile editor with Steam discovery and running-game detection**. It does **not** write Steam launch options yet. You add the vkSumi environment variable once; the app finds the game, links the right config, and lets you tune it live.
 
 ## What works
 

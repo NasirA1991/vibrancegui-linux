@@ -19,7 +19,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libgtk-4-dev libadwaita-1-dev libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libwayland-dev \
             libx11-dev libxcursor-dev libxi-dev libxrandr-dev libxinerama-dev \
-            pkg-config
+            pkg-config libssl-dev
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
