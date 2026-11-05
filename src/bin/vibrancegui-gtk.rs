@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+#[path = "../artwork.rs"]
+mod artwork;
 #[path = "../config_doc.rs"]
 mod config_doc;
 #[path = "../paths.rs"]
@@ -24,7 +26,7 @@ use libadwaita as adw;
 
 use std::path::PathBuf;
 
-use config_doc::ConfigDoc;
+use config_doc::{ConfigDoc, KNOBS};
 use paths::AppPaths;
 use state::SavedState;
 use steam::SteamData;
@@ -106,9 +108,43 @@ fn build_ui(app: &adw::Application) {
     settings_box.set_margin_bottom(8);
     settings_box.set_margin_start(10);
     settings_box.set_margin_end(10);
-    settings_box.append(&gtk::CheckButton::with_label(
-        "Start with my desktop session",
-    ));
+    let autostart = gtk::CheckButton::with_label("Start with my desktop session");
+    autostart.set_active(
+        paths
+            .vksumi_config_dir
+            .parent()
+            .unwrap_or(&paths.home)
+            .join("autostart/vibrancegui.desktop")
+            .is_file(),
+    );
+    let autostart_paths = paths.clone();
+    let autostart_button = autostart.clone();
+    autostart.connect_toggled(move |_| {
+        let path = autostart_paths
+            .vksumi_config_dir
+            .parent()
+            .unwrap_or(&autostart_paths.home)
+            .join("autostart/vibrancegui.desktop");
+        if autostart_button.is_active() {
+            let exe = std::env::var_os("APPIMAGE")
+                .map(std::path::PathBuf::from)
+                .or_else(|| std::env::current_exe().ok())
+                .unwrap_or_else(|| std::path::PathBuf::from("vibrancegui"));
+            let exec = if exe.to_string_lossy().contains(' ') {
+                format!("\"{}\" --hidden", exe.display())
+            } else {
+                format!("{} --hidden", exe.display())
+            };
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let body = format!("[Desktop Entry]\nType=Application\nName=VibranceGUI for Linux\nExec={exec}\nIcon=vibrancegui\nTerminal=false\nX-GNOME-Autostart-enabled=true\n");
+            let _ = std::fs::write(path, body);
+        } else {
+            let _ = std::fs::remove_file(path);
+        }
+    });
+    settings_box.append(&autostart);
     let label = gtk::Label::new(Some("Default Vibrance Level"));
     label.set_xalign(0.0);
     settings_box.append(&label);
@@ -162,7 +198,12 @@ fn build_ui(app: &adw::Application) {
         card.set_margin_bottom(6);
         card.set_margin_start(6);
         card.set_margin_end(6);
-        let image = if let Some(p) = game.artwork.as_ref().filter(|p| p.is_file()) {
+        let icon_path = game.artwork.clone().filter(|p| p.is_file()).or_else(|| {
+            game.manual_exe
+                .as_ref()
+                .and_then(|exe| artwork::extract_exe_icon(&paths.cache_dir, exe))
+        });
+        let image = if let Some(p) = icon_path.as_ref() {
             gtk::Image::from_file(p)
         } else {
             gtk::Image::from_icon_name("application-x-executable")
@@ -296,5 +337,41 @@ fn build_detail_page(
     row.append(&slider);
     row.append(&value);
     page.append(&row);
+
+    let advanced = gtk::Expander::new(Some("Advanced (all vkSumi sliders)"));
+    let adv_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    for knob in KNOBS.iter().skip(1) {
+        let knob_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let label = gtk::Label::new(Some(knob.label));
+        label.set_xalign(0.0);
+        label.set_hexpand(true);
+        knob_row.append(&label);
+        let knob_scale = gtk::Scale::with_range(
+            gtk::Orientation::Horizontal,
+            knob.min as f64,
+            knob.max as f64,
+            knob.step as f64,
+        );
+        knob_scale.set_hexpand(true);
+        knob_scale.set_draw_value(true);
+        knob_scale.set_value(
+            doc.borrow()
+                .get_f32(knob.key)
+                .unwrap_or(0.0)
+                .clamp(knob.min, knob.max) as f64,
+        );
+        let paths_save = paths.clone();
+        let doc_clone = doc.clone();
+        let key = knob.key.to_string();
+        knob_scale.connect_value_changed(move |s| {
+            let mut d = doc_clone.borrow_mut();
+            d.set_f32(&key, s.value() as f32);
+            let _ = d.save(&paths_save);
+        });
+        knob_row.append(&knob_scale);
+        adv_box.append(&knob_row);
+    }
+    advanced.set_child(Some(&adv_box));
+    page.append(&advanced);
     page.upcast()
 }
