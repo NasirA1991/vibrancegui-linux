@@ -94,6 +94,7 @@ jobs:
         run: |
           mkdir -p packaging/aur/generated
           sed "s/@VERSION@/${VERSION}/g" packaging/aur/PKGBUILD.in > packaging/aur/generated/PKGBUILD
+          sed "s/@VERSION@/${VERSION}/g" packaging/aur/PKGBUILD-bin.in > packaging/aur/generated/PKGBUILD-bin
 
       - name: Publish AUR package
         uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
@@ -105,4 +106,16 @@ jobs:
           commit_email: ${{ secrets.AUR_EMAIL }}
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
           commit_message: "vibrancegui-linux ${{ env.VERSION }}-1"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
+
+      - name: Publish AUR -bin package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
+        with:
+          pkgname: vibrancegui-linux-bin
+          pkgbuild: packaging/aur/generated/PKGBUILD-bin
+          updpkgsums: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "vibrancegui-linux-bin ${{ env.VERSION }}-1"
           ssh_keyscan_types: rsa,ecdsa,ed25519

@@ -70,13 +70,19 @@ Install vkSumi through the method you prefer, make sure the layer is visible to 
 
 ### AUR (Arch / CachyOS)
 
+Prebuilt package — **no Rust compilation on your machine**:
+
 ```bash
-paru -S vibrancegui-linux
-# or
-yay -S vibrancegui-linux
+paru -S vibrancegui-linux-bin
 ```
 
-If your AUR helper does not see the new package yet, refresh its databases first (`paru -Sy`).
+Source package, built locally by your AUR helper:
+
+```bash
+paru -S vibrancegui-linux
+```
+
+Do not install both; they provide the same `vibrancegui` binary and conflict. If your AUR helper does not see a package yet, refresh its databases first (`paru -Sy`).
 
 ### AppImage
 

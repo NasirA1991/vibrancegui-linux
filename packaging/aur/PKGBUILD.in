@@ -6,6 +6,7 @@ pkgdesc="Unofficial VibranceGUI-style vkSumi color profile manager for Linux"
 arch=('x86_64')
 url="https://github.com/NasirA1991/vibrancegui-linux"
 license=('MIT')
+conflicts=('vibrancegui-linux-bin')
 depends=(
   'gcc-libs'
   'glibc'
