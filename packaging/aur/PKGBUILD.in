@@ -10,6 +10,7 @@ depends=(
   'gcc-libs'
   'glibc'
   'fontconfig'
+  'openssl'
   'libglvnd'
   'wayland'
   'libxkbcommon'
