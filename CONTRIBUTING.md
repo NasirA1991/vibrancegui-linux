@@ -84,6 +84,7 @@ docs: document VKSUMI_CONFIG_FILE precedence
 Documentation lives in:
 
 - [README.md](README.md) — entry point and quick start
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) — installation and first profile
 - [docs/USAGE.md](docs/USAGE.md) — UI workflows
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) — paths, precedence, controls
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — common failures

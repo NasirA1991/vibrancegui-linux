@@ -8,16 +8,17 @@ VibranceGUI for Linux edits the same plain-text vkSumi configuration files that 
 - files the app creates;
 - how external profiles are handled.
 
-For the UI workflow, see the [user guide](USAGE.md). For symptoms and fixes, see [Troubleshooting](TROUBLESHOOTING.md).
+For the UI workflow, see the [user guide](USAGE.md). For a first install, see [Getting Started](GETTING_STARTED.md). For symptoms and fixes, see [Troubleshooting](TROUBLESHOOTING.md).
 
 ## File locations
 
 Paths follow the XDG base-directory specification. The defaults are shown.
 
-| File | Default path | Written by the app |
+| File or variable | Default value | Written by the app |
 | --- | --- | --- |
 | Global vkSumi profile | `~/.config/vkSumi/vkSumi.conf` | Only `vibrance` from the default slider; other existing keys are preserved |
 | Per-game vkSumi profile | `~/.config/vkSumi/games/<executable-stem>.conf` | Numeric controls edited in the game window |
+| Explicit profile override | `VKSUMI_CONFIG_FILE` in Steam launch options or a process environment | Not written; the resolved path may be remembered in app state |
 | App state | `~/.config/vibrancegui/state.json` | Tracked games, manual games, remembered profile paths, theme |
 | Profile backups | `~/.config/vibrancegui/backups/` | Timestamped copies before a profile is replaced |
 | Artwork cache | `~/.cache/vibrancegui/artwork/` | Downloaded Steam artwork |
@@ -73,13 +74,13 @@ The UI exposes 27 numeric keys. **Vibrance** is in Basic; the rest are under **A
 
 | Key | Label | Range | Notes |
 | --- | --- | --- | --- |
-| `vibrance` | Vibrance | 0.0–1.0 | Smarter saturation: boosts colorful areas while limiting skin-tone washout |
+| `vibrance` | Vibrance | 0.0–1.0 | Smarter saturation: boosts colourful areas while limiting skin-tone washout |
 
-### Color and tone
+### Colour and tone
 
 | Key | Label | Range | Notes |
 | --- | --- | --- | --- |
-| `saturation` | Saturation | -1.0–1.0 | Overall color intensity |
+| `saturation` | Saturation | -1.0–1.0 | Overall colour intensity |
 | `temperature` | Temperature | -1.0–1.0 | Warm (+) or cool (-) white balance |
 | `contrast` | Contrast | -1.0–1.0 | Difference between light and dark areas |
 | `brightness` | Brightness | -1.0–1.0 | Overall brightness |
@@ -108,12 +109,12 @@ The UI exposes 27 numeric keys. **Vibrance** is in Basic; the rest are under **A
 
 | Key | Label | Range | Notes |
 | --- | --- | --- | --- |
-| `shadow_tint` | Shadow tint | 0.0–1.0 | Strength of colored shadow tinting |
+| `shadow_tint` | Shadow tint | 0.0–1.0 | Strength of coloured shadow tinting |
 | `shadow_tint_hue` | Shadow tint hue (°) | 0–360 | Hue used for shadow tinting |
-| `highlight_tint` | Highlight tint | 0.0–1.0 | Strength of colored highlight tinting |
+| `highlight_tint` | Highlight tint | 0.0–1.0 | Strength of coloured highlight tinting |
 | `highlight_tint_hue` | Highlight tint hue (°) | 0–360 | Hue used for highlight tinting |
 | `vignette` | Vignette | 0.0–1.0 | Darkens frame edges |
-| `daltonize_severity` | Daltonize severity | 0.0–1.0 | Strength of color-vision-deficiency correction |
+| `daltonize_severity` | Daltonize severity | 0.0–1.0 | Strength of colour-vision-deficiency correction |
 | `daltonize_strength` | Daltonize strength | 0.0–1.0 | Overall strength of the daltonize effect |
 
 ### Keys not exposed
@@ -161,10 +162,10 @@ The state file contains no game launch options, environment dumps, or account cr
 
 ## Autostart entry
 
-Enabling autostart writes an XDG-style desktop entry under `$XDG_CONFIG_HOME/autostart/` (default `~/.config/autostart/`). Its command is:
+Enabling autostart writes an XDG-style desktop entry under `$XDG_CONFIG_HOME/autostart/` (default `~/.config/autostart/`). The `Exec` line points at the installed executable (or the current AppImage path) and appends `--tray-only`, for example:
 
 ```text
-vibrancegui --tray-only
+/usr/bin/vibrancegui --tray-only
 ```
 
 The helper displays a tray icon and starts the main app when **Show** is selected. If no StatusNotifierItem host is available, the helper cannot provide a usable menu.

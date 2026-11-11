@@ -206,7 +206,15 @@ The AppImage uses host GL/EGL, Wayland/X11, OpenSSL, and font libraries plus the
 
 ## Roadmap
 
-These are planned, not implemented in the current 0.2.x line:
+These are planned, not implemented in the latest release.
+
+Already implemented, and not roadmap items:
+
+- atomic profile writes with temporary files and rename;
+- timestamped backups, capped at 20 per backup directory;
+- resetting individual controls and all editor-managed overrides.
+
+Planned:
 
 - **Managed Steam launch options.** Write and roll back `ENABLE_VKSUMI=1` safely, with Steam-closed enforcement, backups, and drift detection.
 - **Stable per-AppID profiles.** Use `VKSUMI_CONFIG_FILE` consistently so games that share an executable do not share a profile by accident.
@@ -217,6 +225,7 @@ These are planned, not implemented in the current 0.2.x line:
 ## Documentation
 
 - [README](../README.md) — project entry point and quick start
+- [Getting Started](GETTING_STARTED.md) — install, enable vkSumi and first profile edit
 - [User guide](USAGE.md) — UI and workflows
 - [Configuration](CONFIGURATION.md) — paths, precedence, controls, file format
 - [Troubleshooting](TROUBLESHOOTING.md) — common failures

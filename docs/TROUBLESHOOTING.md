@@ -1,6 +1,6 @@
 # Troubleshooting
 
-This page covers the problems reported most often. Start with the symptom that matches; each section ends with the diagnostic command that gives the most useful next clue.
+This page covers the problems reported most often. For the first-run sequence, start with [Getting Started](GETTING_STARTED.md). Otherwise, start with the symptom that matches; each section ends with the diagnostic command that gives the most useful next clue.
 
 ## vkSumi is not detected
 
@@ -47,7 +47,7 @@ Adding a game with **Add** does not add the launch option. It only makes the gam
 
 The library scanner targets native Steam roots. Flatpak Steam libraries are not imported. A Flatpak game can still be auto-adopted as a running process when its environment and executable are visible, and **Add manually** remains available. See [the user guide](USAGE.md#adding-games).
 
-## The game runs but colors do not change
+## The game runs but colours do not change
 
 First check the game window's status line:
 

@@ -1,10 +1,12 @@
 # Using VibranceGUI for Linux
 
-This guide covers the desktop UI, game discovery, launch options, profile editing, tray behavior, files, and diagnostics. For every config key and path rule, see the [configuration reference](CONFIGURATION.md). For fixes, see [Troubleshooting](TROUBLESHOOTING.md).
+This guide covers the desktop UI, game discovery, launch options, profile editing, tray behavior, files, and diagnostics. For a first install, start with [Getting Started](GETTING_STARTED.md). For every config key and path rule, see the [configuration reference](CONFIGURATION.md). For fixes, see [Troubleshooting](TROUBLESHOOTING.md).
 
 ## What the app does
 
-VibranceGUI for Linux manages [vkSumi](https://github.com/reakjra/vkSumi) color-grading profiles. It can discover games, associate a game with its vkSumi config, and edit that config while the game is running.
+VibranceGUI for Linux manages [vkSumi](https://github.com/reakjra/vkSumi) colour-grading profiles. It can discover games, associate a game with its vkSumi config, and edit that config while the game is running. vkSumi performs the actual colour processing.
+
+The app can start and browse games without vkSumi installed, and it can edit a profile path that is already known. Colour changes will only appear once vkSumi is installed and loaded by the game.
 
 It does **not**:
 
@@ -17,14 +19,16 @@ Because of that split, the `ENABLE_VKSUMI=1` launch option is still a one-time m
 
 ## Before you start
 
-You need:
+To use the app itself you need Linux with Wayland or X11. A native Steam installation is optional, but required for automatic Steam discovery.
+
+To actually grade a game you also need:
 
 - a Vulkan game;
 - vkSumi installed and visible to the game;
 - the game launched with `ENABLE_VKSUMI=1`;
-- VibranceGUI for Linux running while you launch the game (for automatic detection and profile linking).
+- VibranceGUI for Linux running while you launch the game, for automatic detection and profile linking.
 
-If vkSumi is missing, the header shows **vkSumi not detected** and the app displays an install hint. The app can still edit a profile path that is already known, but the game will not be graded until the layer is available. See [Installing vkSumi](TROUBLESHOOTING.md#vksumi-is-not-detected).
+If vkSumi is missing, the header shows **vkSumi not detected** and the app displays an install hint. The app can still edit a profile path that is already known, but the game will not be graded until the layer is available. See [Installing vkSumi](GETTING_STARTED.md#2-install-vksumi) and [vkSumi is not detected](TROUBLESHOOTING.md#vksumi-is-not-detected).
 
 ## Main window
 
@@ -42,6 +46,8 @@ The **☰** menu contains:
 - **Quit**
 
 The selected theme is saved. The window can be resized; game settings open in a separate native window that can be moved independently of the main window.
+
+![Main window with a demo library, game artwork, default vibrance and autostart](images/main-window.png)
 
 ## Adding games
 
@@ -90,6 +96,13 @@ While the app is running, a process that:
 
 is adopted into the manual-game list automatically. This is useful for Heroic, Lutris, Bottles, Faugus, and other launchers when their process environment is visible to the app. It is not a library import: the game appears only after it has run.
 
+Current discovery limits:
+
+- Native Steam libraries and Steam shortcuts are scanned. Heroic, Lutris, Bottles, Faugus and Flatpak Steam libraries are not imported.
+- Running games from those launchers can be adopted only when they expose `ENABLE_VKSUMI=1` and a readable executable path.
+- Manual games are matched to running processes by executable name.
+- The newest `localconfig.vdf` under `userdata/` is used for launch options. If that file cannot be read or parsed, launch-option-based discovery is unavailable; there is no fallback to an older account.
+
 ### Remove a game
 
 Select a tile and click **Remove**. This removes the app's tracking entry only. It does not delete the vkSumi profile, Steam data, or the executable.
@@ -117,7 +130,7 @@ To turn vkSumi off for one game:
 
 The app never changes these options. The detail view offers **Copy launch option** when the variable is missing.
 
-vkSumi is an implicit Vulkan layer, so it must be enabled before the game creates its Vulkan instance. The app cannot turn it on inside an already-running game. It also does not write Steam's files; automatic launch-option management is planned but not implemented in 0.2.x.
+vkSumi is an implicit Vulkan layer, so it must be enabled before the game creates its Vulkan instance. The app cannot turn it on inside an already-running game. It also does not write Steam's files; automatic launch-option management is planned but not implemented.
 
 ## Detecting a running game
 
@@ -129,12 +142,21 @@ The app scans `/proc` while it is running, approximately every two seconds. For 
 - `/proc/<pid>/maps` for `libVkLayer_vksumi.so`;
 - `VKSUMI_CONFIG_FILE` when present.
 
-A detected game is linked to the profile path reported by the process, or to the per-executable path when the process has no explicit config variable. The detail view distinguishes:
+A detected game is linked to the profile path reported by the process, or to the per-executable path when the process has no explicit config variable.
 
-- **Detected · vkSumi layer mapped** — the process is running and the layer library is mapped.
-- **Detected · layer unconfirmed** — the process has the environment variable, but the layer is not visible in its memory maps or the maps could not be read.
+The app distinguishes these states:
 
-The second state can still be useful for editing a known config, but it usually means the layer did not load for that process. See [the game runs but colors do not change](TROUBLESHOOTING.md#the-game-runs-but-colors-do-not-change).
+| State | Meaning |
+| --- | --- |
+| **Installed** | Steam's manifest for the game exists in a discovered library. |
+| **Enabled for vkSumi** | The launch options contain `ENABLE_VKSUMI=1`. |
+| **Tracked** | The game is in the grid, either automatically or through **Add**. |
+| **Running** | A matching process is visible in `/proc`. |
+| **Detected · vkSumi layer mapped** | The process is running and `libVkLayer_vksumi.so` is in its memory maps. |
+| **Detected · layer unconfirmed** | The process has the environment variable, but the layer is not visible in its maps or the maps could not be read. |
+| **Profile linked** | An effective vkSumi config path was resolved. |
+
+A game can be installed without being enabled, enabled without being tracked, tracked without running, or running without the layer having loaded. The settings window shows the layer and profile state for the selected game. The **layer unconfirmed** state can still be useful for editing a known config, but it usually means the layer did not load for that process. See [the game runs but colours do not change](TROUBLESHOOTING.md#the-game-runs-but-colours-do-not-change).
 
 You can open the app after the game has started; the first scan can still find it. For reliable profile linking, start the app before launching the game.
 
@@ -146,6 +168,10 @@ Select a game tile to open its settings window.
 
 - **Basic** shows **Vibrance**, the main control.
 - **Advanced (all vkSumi sliders)** contains the remaining 26 numeric controls.
+
+![Game settings window with Basic vibrance and expanded Advanced controls](images/game-settings.png)
+
+The Advanced section does not expose every vkSumi feature. The censor-box editor, the daltonize-mode selector, `enabled` and `compare` remain config-file-only. The numeric daltonize strength and severity controls are exposed.
 
 Every control supports:
 
@@ -181,6 +207,8 @@ The app registers a StatusNotifierItem tray icon when a tray host is available. 
 - **Refresh Steam library**
 - **Quit**
 
+![Settings and app menu showing autostart, configuration, theme, About and Quit](images/settings-menu.png)
+
 ### X11
 
 Closing the window hides it to the tray. `Ctrl+Q` quits. The first close sends a desktop notification.
@@ -214,16 +242,17 @@ or `~/.config/autostart/vibrancegui.desktop` when `XDG_CONFIG_HOME` is unset. Th
 | `--hidden` | Start hidden if a tray was created. |
 | `--tray-only` | Internal helper used for close-to-tray and autostart. It waits for the tray's **Show** action and is not intended as a normal launcher. |
 
-Run from a build tree as `./target/release/vibrancegui ...`; run an installed package as `vibrancegui ...`.
+Run from a build tree as `./target/release/vibrancegui ...`; run an installed package as `vibrancegui ...`. When using the AppImage, replace `vibrancegui` with the AppImage path.
 
 ## Files and data
 
 Paths use the XDG base directories. The defaults are shown; set `XDG_CONFIG_HOME` or `XDG_CACHE_HOME` to relocate them.
 
-| Path | Purpose |
+| Path or variable | Purpose |
 | --- | --- |
 | `~/.config/vkSumi/vkSumi.conf` | Global vkSumi profile. The default-vibrance slider writes `vibrance` here. |
 | `~/.config/vkSumi/games/<executable-stem>.conf` | Normal per-executable vkSumi profile. |
+| `VKSUMI_CONFIG_FILE` | Explicit profile path from the game's launch options or process environment. It is read, not written. |
 | `~/.config/vibrancegui/state.json` | Tracked games, manual games, remembered profile paths, and theme. |
 | `~/.config/vibrancegui/backups/` | Timestamped profile backups, capped at 20 files. |
 | `~/.cache/vibrancegui/artwork/` | Downloaded Steam artwork. |
@@ -259,7 +288,7 @@ The app does not have a global uninstaller. To remove its data as well:
 - delete `$XDG_CACHE_HOME/vibrancegui/` (artwork and icons; default `~/.cache/vibrancegui/`);
 - delete `$XDG_CONFIG_HOME/autostart/vibrancegui.desktop` if you enabled autostart (default `~/.config/autostart/vibrancegui.desktop`).
 
-Do not delete `~/.config/vkSumi/` unless you also want to remove your color profiles. Uninstalling VibranceGUI does not uninstall vkSumi.
+Do not delete `~/.config/vkSumi/` unless you also want to remove your colour profiles. Uninstalling VibranceGUI does not uninstall vkSumi.
 
 ## Getting help
 
